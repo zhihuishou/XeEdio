@@ -1,0 +1,47 @@
+# AI Video Pipeline Configuration
+# Environment variables with PIPELINE_ prefix override these values.
+
+# DeepSeek LLM API configuration
+deepseek:
+  api_key: ""                          # Required. DeepSeek API key (env: PIPELINE_DEEPSEEK_API_KEY)
+  endpoint: "https://api.deepseek.com" # Required. API endpoint URL (env: PIPELINE_DEEPSEEK_ENDPOINT)
+  timeout_seconds: 60                  # HTTP request timeout in seconds
+
+# Edge-TTS voice synthesis configuration
+edge_tts:
+  voice: "zh-CN-XiaoxiaoNeural"        # Required. TTS voice name (env: PIPELINE_EDGE_TTS_VOICE)
+  output_dir: "./output/audio"         # Required. Directory for generated audio files
+
+# Pexels media API configuration
+pexels:
+  api_key: ""                          # Required. Pexels API key (env: PIPELINE_PEXELS_API_KEY)
+  output_dir: "./output/media"         # Required. Directory for downloaded media files
+
+# FFmpeg rendering configuration
+ffmpeg:
+  path: "ffmpeg"                       # Required. Path to ffmpeg binary (env: PIPELINE_FFMPEG_PATH)
+  output_dir: "./output/video"         # Required. Directory for rendered video files
+
+# Video publishing configuration
+publish:
+  platform: "xiaohongshu"              # Required. Target platform name (env: PIPELINE_PUBLISH_PLATFORM)
+  max_file_size: 104857600             # Max upload file size in bytes (default: 100MB)
+
+# Harness retry strategy configuration for each pipeline stage
+harnesses:
+  script:
+    max_retries: 3
+    retry_interval_ms: 1000
+    timeout_seconds: 120
+  material:
+    max_retries: 2
+    retry_interval_ms: 2000
+    timeout_seconds: 300
+  synthesis:
+    max_retries: 1
+    retry_interval_ms: 1000
+    timeout_seconds: 600
+  distribution:
+    max_retries: 3
+    retry_interval_ms: 3000
+    timeout_seconds: 120

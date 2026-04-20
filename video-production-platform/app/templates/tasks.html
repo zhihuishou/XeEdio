@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}任务列表 - 视频生产平台{% endblock %}
+{% block content %}
+<div x-data="tasksPage()" x-init="init()">
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">任务列表</h1>
+        <a href="/tasks/new" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium">
+            新建任务
+        </a>
+    </div>
+
+    <!-- Status Filter Tabs -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <div class="flex flex-wrap gap-2">
+            <template x-for="f in filters" :key="f.value">
+                <button @click="statusFilter = f.value; currentPage = 1; loadTasks()"
+                    :class="statusFilter === f.value ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                    class="px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200"
+                    x-text="f.label"></button>
+            </template>
+        </div>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    </div>
+
+    <!-- Task List -->
+    <div x-show="!loading && tasks.length > 0" class="space-y-3">
+        <template x-for="task in tasks" :key="task.id">
+            <div @click="toggleDetail(task)" class="bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-md transition-shadow duration-200">
+                <div class="flex items-center justify-between">
+                    <div class="flex-1 min-w-0">
+                        <h3 class="text-sm font-semibold text-gray-800 truncate" x-text="task.topic || '未命名任务'"></h3>
+                        <p class="text-xs text-gray-500 mt-1">
+                            创建: <span x-text="formatTime(task.created_at)"></span>
+                            <span class="mx-2">|</span>
+                            更新: <span x-text="formatTime(task.updated_at)"></span>
+                        </p>
+                    </div>
+                    <span class="ml-3 px-2.5 py-0.5 rounded-full text-xs font-medium"
+                          :class="getStatusClass(task.status)" x-text="getStatusLabel(task.status)"></span>
+                </div>
+                <!-- Detail Panel -->
+                <div x-show="expandedTask === task.id" x-transition class="mt-4 pt-4 border-t border-gray-100">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <p class="text-gray-500 font-medium mb-1">文案内容</p>
+                            <p class="text-gray-700 whitespace-pre-wrap text-xs bg-gray-50 p-2 rounded max-h-32 overflow-y-auto"
+                               x-text="task.copywriting_filtered || task.copywriting_raw || '暂无文案'"></p>
+                        </div>
+                        <div>
+                            <p class="text-gray-500 font-medium mb-1">任务信息</p>
+                            <ul class="text-xs text-gray-600 space-y-1">
+                                <li>状态: <span x-text="getStatusLabel(task.status)"></span></li>
+                                <li>任务ID: <span x-text="task.id"></span></li>
+                                <li x-show="task.video_path">视频: 已生成</li>
+                            </ul>
+                            <div x-show="task.video_path" class="mt-2">
+                                <video :src="'/static/' + task.video_path" controls class="w-full rounded border border-gray-200"></video>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!loading && tasks.length === 0" class="text-center py-12">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        <p class="mt-2 text-gray-500">暂无任务</p>
+    </div>
+
+    <!-- Pagination -->
+    <div x-show="!loading && totalPages > 1" class="flex items-center justify-center space-x-2 mt-6">
+        <button @click="currentPage--; loadTasks()" :disabled="currentPage <= 1"
+            class="px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">上一页</button>
+        <span class="text-sm text-gray-600" x-text="currentPage + ' / ' + totalPages"></span>
+        <button @click="currentPage++; loadTasks()" :disabled="currentPage >= totalPages"
+            class="px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">下一页</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function tasksPage() {
+    return {
+        tasks: [],
+        loading: false,
+        statusFilter: '',
+        currentPage: 1,
+        totalPages: 1,
+        expandedTask: null,
+        filters: [
+            { value: '', label: '全部' },
+            { value: 'draft', label: '草稿' },
+            { value: 'pending_review', label: '待审核' },
+            { value: 'approved', label: '已通过' },
+            { value: 'rejected', label: '已拒绝' }
+        ],
+
+        async init() {
+            await this.loadTasks();
+        },
+
+        async loadTasks() {
+            this.loading = true;
+            try {
+                let url = `/api/tasks?page=${this.currentPage}&page_size=20`;
+                if (this.statusFilter) url += `&status=${this.statusFilter}`;
+                const data = await apiCall('GET', url);
+                if (data) {
+                    this.tasks = data.items || data.tasks || data || [];
+                    const total = data.total || this.tasks.length;
+                    this.totalPages = Math.ceil(total / 20) || 1;
+                }
+            } catch (e) {
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '加载任务失败', type: 'error' } }));
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        toggleDetail(task) {
+            this.expandedTask = this.expandedTask === task.id ? null : task.id;
+        },
+
+        getStatusLabel(status) {
+            const labels = {
+                'draft': '草稿', 'copy_confirmed': '文案已确认', 'tts_done': 'TTS完成',
+                'video_done': '视频完成', 'pending_review': '待审核',
+                'approved': '已通过', 'rejected': '已拒绝', 'published': '已发布'
+            };
+            return labels[status] || status;
+        },
+
+        getStatusClass(status) {
+            const classes = {
+                'draft': 'bg-gray-100 text-gray-700',
+                'copy_confirmed': 'bg-blue-100 text-blue-700',
+                'tts_done': 'bg-indigo-100 text-indigo-700',
+                'video_done': 'bg-purple-100 text-purple-700',
+                'pending_review': 'bg-yellow-100 text-yellow-700',
+                'approved': 'bg-green-100 text-green-700',
+                'rejected': 'bg-red-100 text-red-700',
+                'published': 'bg-emerald-100 text-emerald-700'
+            };
+            return classes[status] || 'bg-gray-100 text-gray-700';
+        },
+
+        formatTime(ts) {
+            if (!ts) return '-';
+            return new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>
+{% endblock %}

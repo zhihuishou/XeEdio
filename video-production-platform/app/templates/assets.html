@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+{% block title %}素材库 - 视频生产平台{% endblock %}
+{% block content %}
+<div x-data="assetsPage()" x-init="init()">
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">素材库</h1>
+        <template x-if="currentUser && currentUser.role === 'admin'">
+            <button @click="showUploadModal = true"
+                    class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium">
+                <span class="flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    上传素材
+                </span>
+            </button>
+        </template>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <!-- Category Tabs -->
+            <div class="flex flex-wrap gap-2">
+                <button @click="filterCategory = ''; loadAssets()"
+                        :class="filterCategory === '' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                        class="px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200">
+                    全部
+                </button>
+                <button @click="filterCategory = 'talent_speaking'; loadAssets()"
+                        :class="filterCategory === 'talent_speaking' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                        class="px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200">
+                    达人口播
+                </button>
+                <button @click="filterCategory = 'product'; loadAssets()"
+                        :class="filterCategory === 'product' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                        class="px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200">
+                    产品素材
+                </button>
+                <button @click="filterCategory = 'pexels_broll'; loadAssets()"
+                        :class="filterCategory === 'pexels_broll' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+                        class="px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200">
+                    Pexels空镜
+                </button>
+            </div>
+
+            <!-- Search -->
+            <div class="flex-1 w-full sm:w-auto">
+                <div class="relative">
+                    <input type="text" x-model="searchKeyword" @keyup.enter="loadAssets()"
+                           placeholder="搜索素材..."
+                           class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
+                    <svg class="absolute left-3 top-2.5 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                    </svg>
+                </div>
+            </div>
+            <button @click="loadAssets()" class="bg-gray-100 text-gray-700 hover:bg-gray-200 px-4 py-2 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200">
+                搜索
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    </div>
+
+    <!-- Assets Grid -->
+    <div x-show="!loading && assets.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6">
+        <template x-for="asset in assets" :key="asset.id">
+            <div class="bg-white rounded-lg shadow overflow-hidden group cursor-pointer hover:shadow-md transition-shadow duration-200">
+                <!-- Thumbnail -->
+                <div class="aspect-video bg-gray-200 relative overflow-hidden">
+                    <img :src="asset.thumbnail_path ? '/static/' + asset.thumbnail_path : '/static/placeholder.svg'"
+                         :alt="asset.original_filename"
+                         class="w-full h-full object-cover"
+                         @error="$event.target.src='/static/placeholder.svg'">
+                    <!-- Duration badge -->
+                    <template x-if="asset.duration">
+                        <span class="absolute bottom-1 right-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded"
+                              x-text="formatDuration(asset.duration)"></span>
+                    </template>
+                    <!-- Media type badge -->
+                    <span class="absolute top-1 left-1 text-xs px-1.5 py-0.5 rounded"
+                          :class="{
+                              'bg-purple-100 text-purple-700': asset.media_type === 'video',
+                              'bg-green-100 text-green-700': asset.media_type === 'image',
+                              'bg-yellow-100 text-yellow-700': asset.media_type === 'audio'
+                          }"
+                          x-text="getMediaTypeLabel(asset.media_type)"></span>
+                    <!-- Delete button (Admin) -->
+                    <template x-if="currentUser && currentUser.role === 'admin'">
+                        <button @click.stop="confirmDelete(asset)"
+                                class="absolute top-1 right-1 bg-red-500 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 cursor-pointer hover:bg-red-600">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </template>
+                </div>
+                <!-- Info -->
+                <div class="p-2">
+                    <p class="text-xs text-gray-800 font-medium truncate" x-text="asset.original_filename"></p>
+                    <p class="text-xs text-gray-500 mt-0.5" x-text="getCategoryLabel(asset.category)"></p>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!loading && assets.length === 0" class="text-center py-12">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        <p class="mt-2 text-gray-500">暂无素材</p>
+    </div>
+
+    <!-- Pagination -->
+    <div x-show="!loading && totalPages > 1" class="flex items-center justify-center space-x-2">
+        <button @click="goToPage(currentPage - 1)" :disabled="currentPage <= 1"
+                class="px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200">
+            上一页
+        </button>
+        <template x-for="page in paginationPages" :key="page">
+            <button @click="goToPage(page)"
+                    :class="page === currentPage ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-700 hover:bg-gray-50'"
+                    class="px-3 py-1.5 border rounded-md text-sm cursor-pointer transition-colors duration-200"
+                    x-text="page"></button>
+        </template>
+        <button @click="goToPage(currentPage + 1)" :disabled="currentPage >= totalPages"
+                class="px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200">
+            下一页
+        </button>
+    </div>
+
+    <!-- Upload Modal -->
+    <div x-show="showUploadModal" class="fixed inset-0 z-40 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-black/50" @click="closeUploadModal()"></div>
+            <div class="bg-white rounded-lg shadow-xl max-w-md w-full relative z-50 p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">上传素材</h3>
+
+                <!-- File Input -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">选择文件</label>
+                    <input type="file" @change="handleFileSelect($event)"
+                           accept="video/mp4,video/quicktime,video/x-msvideo,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,audio/aac"
+                           class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 file:cursor-pointer hover:file:bg-blue-100">
+                    <p class="text-xs text-gray-400 mt-1">支持：mp4/mov/avi、jpg/png/webp、mp3/wav/aac</p>
+                </div>
+
+                <!-- Category Select -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">分类标签</label>
+                    <select x-model="uploadCategory"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="">请选择分类</option>
+                        <option value="talent_speaking">达人口播</option>
+                        <option value="product">产品素材</option>
+                        <option value="pexels_broll">Pexels空镜</option>
+                    </select>
+                </div>
+
+                <!-- Upload Progress -->
+                <div x-show="uploading" class="mb-4">
+                    <div class="flex items-center justify-between text-sm text-gray-600 mb-1">
+                        <span>上传中...</span>
+                        <span x-text="uploadProgress + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                             :style="'width: ' + uploadProgress + '%'"></div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex justify-end space-x-3">
+                    <button @click="closeUploadModal()"
+                            class="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors duration-200">
+                        取消
+                    </button>
+                    <button @click="uploadAsset()" :disabled="!uploadFile || !uploadCategory || uploading"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                        上传
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div x-show="showDeleteModal" class="fixed inset-0 z-40 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-black/50" @click="showDeleteModal = false"></div>
+            <div class="bg-white rounded-lg shadow-xl max-w-sm w-full relative z-50 p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-2">确认删除</h3>
+                <p class="text-sm text-gray-600 mb-4">
+                    确定要删除素材 "<span x-text="deleteTarget?.original_filename"></span>" 吗？此操作不可撤销。
+                </p>
+                <div class="flex justify-end space-x-3">
+                    <button @click="showDeleteModal = false"
+                            class="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors duration-200">
+                        取消
+                    </button>
+                    <button @click="deleteAsset()" :disabled="deleting"
+                            class="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700 cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span x-show="!deleting">删除</span>
+                        <span x-show="deleting">删除中...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function assetsPage() {
+    return {
+        assets: [],
+        loading: false,
+        filterCategory: '',
+        searchKeyword: '',
+        currentPage: 1,
+        totalPages: 1,
+        pageSize: 20,
+        totalCount: 0,
+
+        // Upload state
+        showUploadModal: false,
+        uploadFile: null,
+        uploadCategory: '',
+        uploading: false,
+        uploadProgress: 0,
+
+        // Delete state
+        showDeleteModal: false,
+        deleteTarget: null,
+        deleting: false,
+
+        async init() {
+            await this.loadAssets();
+        },
+
+        async loadAssets() {
+            this.loading = true;
+            try {
+                let url = `/api/assets?page=${this.currentPage}&page_size=${this.pageSize}`;
+                if (this.filterCategory) {
+                    url += `&category=${this.filterCategory}`;
+                }
+                if (this.searchKeyword.trim()) {
+                    url += `&keyword=${encodeURIComponent(this.searchKeyword.trim())}`;
+                }
+                const data = await apiCall('GET', url);
+                if (data) {
+                    this.assets = data.items || data.assets || data || [];
+                    this.totalCount = data.total || this.assets.length;
+                    this.totalPages = Math.ceil(this.totalCount / this.pageSize) || 1;
+                }
+            } catch (e) {
+                this.$root.__x.$data.showToast?.('加载素材失败', 'error') ||
+                    console.error('Failed to load assets:', e);
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        get paginationPages() {
+            const pages = [];
+            const start = Math.max(1, this.currentPage - 2);
+            const end = Math.min(this.totalPages, this.currentPage + 2);
+            for (let i = start; i <= end; i++) {
+                pages.push(i);
+            }
+            return pages;
+        },
+
+        goToPage(page) {
+            if (page < 1 || page > this.totalPages) return;
+            this.currentPage = page;
+            this.loadAssets();
+        },
+
+        getCategoryLabel(category) {
+            const labels = {
+                'talent_speaking': '达人口播',
+                'product': '产品素材',
+                'pexels_broll': 'Pexels空镜'
+            };
+            return labels[category] || category;
+        },
+
+        getMediaTypeLabel(type) {
+            const labels = { 'video': '视频', 'image': '图片', 'audio': '音频' };
+            return labels[type] || type;
+        },
+
+        formatDuration(seconds) {
+            if (!seconds) return '';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s.toString().padStart(2, '0')}`;
+        },
+
+        handleFileSelect(event) {
+            this.uploadFile = event.target.files[0] || null;
+        },
+
+        closeUploadModal() {
+            this.showUploadModal = false;
+            this.uploadFile = null;
+            this.uploadCategory = '';
+            this.uploadProgress = 0;
+        },
+
+        async uploadAsset() {
+            if (!this.uploadFile || !this.uploadCategory) return;
+            this.uploading = true;
+            this.uploadProgress = 0;
+
+            try {
+                const formData = new FormData();
+                formData.append('file', this.uploadFile);
+                formData.append('category', this.uploadCategory);
+
+                // Simulate progress
+                const progressInterval = setInterval(() => {
+                    if (this.uploadProgress < 90) {
+                        this.uploadProgress += 10;
+                    }
+                }, 200);
+
+                await apiUpload('/api/assets/upload', formData);
+
+                clearInterval(progressInterval);
+                this.uploadProgress = 100;
+
+                setTimeout(() => {
+                    this.closeUploadModal();
+                    this.uploading = false;
+                    this.loadAssets();
+                    // Access parent toast
+                    document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '素材上传成功', type: 'success' } }));
+                }, 500);
+            } catch (e) {
+                this.uploading = false;
+                const msg = e.data?.error?.message || '上传失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            }
+        },
+
+        confirmDelete(asset) {
+            this.deleteTarget = asset;
+            this.showDeleteModal = true;
+        },
+
+        async deleteAsset() {
+            if (!this.deleteTarget) return;
+            this.deleting = true;
+            try {
+                await apiCall('DELETE', `/api/assets/${this.deleteTarget.id}`);
+                this.showDeleteModal = false;
+                this.deleteTarget = null;
+                this.loadAssets();
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '素材已删除', type: 'success' } }));
+            } catch (e) {
+                const msg = e.data?.error?.message || '删除失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.deleting = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

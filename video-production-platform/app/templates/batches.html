@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}批量任务 - 视频生产平台{% endblock %}
+{% block content %}
+<div x-data="batchesPage()" x-init="init()">
+    <!-- Page Header -->
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">批量任务</h1>
+        <button @click="showCreateModal = true"
+            class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium">
+            新建批量任务
+        </button>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    </div>
+
+    <!-- Batch List -->
+    <div x-show="!loading && batches.length > 0" class="space-y-4">
+        <template x-for="batch in batches" :key="batch.id">
+            <div @click="toggleBatch(batch)" class="bg-white rounded-lg shadow p-4 cursor-pointer hover:shadow-md transition-shadow duration-200">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-semibold text-gray-800">批次 #<span x-text="batch.id"></span></h3>
+                    <span class="text-xs text-gray-500" x-text="formatTime(batch.created_at)"></span>
+                </div>
+                <!-- Progress Bar -->
+                <div class="mb-2">
+                    <div class="flex items-center justify-between text-xs text-gray-600 mb-1">
+                        <span>进度: <span x-text="batch.completed_tasks || 0"></span>/<span x-text="batch.total_tasks || 0"></span></span>
+                        <span x-text="getProgress(batch) + '%'"></span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" :style="'width:' + getProgress(batch) + '%'"></div>
+                    </div>
+                </div>
+                <!-- Status Summary -->
+                <div class="flex flex-wrap gap-2 text-xs">
+                    <span class="bg-gray-100 text-gray-600 px-2 py-0.5 rounded">总计: <span x-text="batch.total_tasks || 0"></span></span>
+                    <span x-show="batch.completed_tasks" class="bg-green-100 text-green-700 px-2 py-0.5 rounded">完成: <span x-text="batch.completed_tasks"></span></span>
+                    <span x-show="batch.failed_tasks" class="bg-red-100 text-red-700 px-2 py-0.5 rounded">失败: <span x-text="batch.failed_tasks"></span></span>
+                </div>
+                <!-- Expanded Detail -->
+                <div x-show="expandedBatch === batch.id" x-transition class="mt-4 pt-4 border-t border-gray-100">
+                    <div x-show="batchDetail">
+                        <h4 class="text-sm font-medium text-gray-700 mb-2">子任务列表</h4>
+                        <div class="space-y-2 max-h-64 overflow-y-auto">
+                            <template x-for="sub in batchDetail.tasks || []" :key="sub.id">
+                                <div class="flex items-center justify-between bg-gray-50 p-2 rounded text-xs">
+                                    <span class="truncate flex-1" x-text="sub.topic || '子任务 #' + sub.id"></span>
+                                    <span class="ml-2 px-2 py-0.5 rounded-full font-medium"
+                                          :class="getSubStatusClass(sub.status)" x-text="getSubStatusLabel(sub.status)"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!loading && batches.length === 0" class="text-center py-12">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+        </svg>
+        <p class="mt-2 text-gray-500">暂无批量任务</p>
+    </div>
+
+    <!-- Create Batch Modal -->
+    <div x-show="showCreateModal" class="fixed inset-0 z-40 overflow-y-auto" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-black/50" @click="showCreateModal = false"></div>
+            <div class="bg-white rounded-lg shadow-xl max-w-lg w-full relative z-50 p-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">新建批量任务</h3>
+                <div class="space-y-4">
+                    <!-- Topics Input -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">主题列表（每行一个）</label>
+                        <textarea x-model="newBatch.topics" rows="6" placeholder="输入多个主题，每行一个..."
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"></textarea>
+                    </div>
+                    <!-- CSV Upload -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">或上传 CSV 文件</label>
+                        <input type="file" accept=".csv" @change="handleCSV($event)"
+                            class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 file:cursor-pointer hover:file:bg-blue-100">
+                    </div>
+                    <!-- Versions per topic -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">每主题版本数</label>
+                        <input type="number" x-model.number="newBatch.versions" min="1" max="10"
+                            class="w-32 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3 mt-6">
+                    <button @click="showCreateModal = false"
+                        class="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors duration-200">取消</button>
+                    <button @click="createBatch()" :disabled="creating || (!newBatch.topics.trim() && !newBatch.csvFile)"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span x-show="!creating">创建</span>
+                        <span x-show="creating">创建中...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function batchesPage() {
+    return {
+        batches: [],
+        loading: false,
+        showCreateModal: false,
+        creating: false,
+        expandedBatch: null,
+        batchDetail: null,
+        newBatch: { topics: '', versions: 1, csvFile: null },
+
+        async init() {
+            await this.loadBatches();
+        },
+
+        async loadBatches() {
+            this.loading = true;
+            try {
+                const data = await apiCall('GET', '/api/batches');
+                if (data) this.batches = data.items || data.batches || data || [];
+            } catch (e) {
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '加载批量任务失败', type: 'error' } }));
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async toggleBatch(batch) {
+            if (this.expandedBatch === batch.id) {
+                this.expandedBatch = null;
+                this.batchDetail = null;
+                return;
+            }
+            this.expandedBatch = batch.id;
+            try {
+                const data = await apiCall('GET', `/api/batches/${batch.id}`);
+                if (data) this.batchDetail = data;
+            } catch (e) { /* ignore */ }
+        },
+
+        getProgress(batch) {
+            if (!batch.total_tasks) return 0;
+            return Math.round(((batch.completed_tasks || 0) / batch.total_tasks) * 100);
+        },
+
+        handleCSV(event) {
+            this.newBatch.csvFile = event.target.files[0] || null;
+        },
+
+        async createBatch() {
+            this.creating = true;
+            try {
+                if (this.newBatch.csvFile) {
+                    const formData = new FormData();
+                    formData.append('file', this.newBatch.csvFile);
+                    formData.append('versions_per_topic', this.newBatch.versions);
+                    await apiUpload('/api/batches/upload-csv', formData);
+                } else {
+                    const topics = this.newBatch.topics.split('\n').map(t => t.trim()).filter(t => t);
+                    await apiCall('POST', '/api/batches', { topics, versions_per_topic: this.newBatch.versions });
+                }
+                this.showCreateModal = false;
+                this.newBatch = { topics: '', versions: 1, csvFile: null };
+                await this.loadBatches();
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '批量任务已创建', type: 'success' } }));
+            } catch (e) {
+                const msg = e.data?.error?.message || '创建失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.creating = false;
+            }
+        },
+
+        getSubStatusLabel(status) {
+            const labels = { 'draft': '草稿', 'pending_review': '待审核', 'approved': '通过', 'rejected': '拒绝', 'video_done': '完成' };
+            return labels[status] || status;
+        },
+
+        getSubStatusClass(status) {
+            const c = { 'draft': 'bg-gray-100 text-gray-600', 'approved': 'bg-green-100 text-green-700', 'rejected': 'bg-red-100 text-red-700', 'video_done': 'bg-purple-100 text-purple-700', 'pending_review': 'bg-yellow-100 text-yellow-700' };
+            return c[status] || 'bg-gray-100 text-gray-600';
+        },
+
+        formatTime(ts) {
+            if (!ts) return '-';
+            return new Date(ts).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+    };
+}
+</script>
+{% endblock %}

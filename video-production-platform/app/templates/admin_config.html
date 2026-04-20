@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}系统配置 - 视频生产平台{% endblock %}
+{% block content %}
+<div x-data="adminConfigPage()" x-init="init()">
+    <!-- Page Header -->
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">系统配置</h1>
+        <p class="text-sm text-gray-500 mt-1">修改后保存即时生效</p>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="flex justify-center py-12">
+        <svg class="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    </div>
+
+    <div x-show="!loading" class="space-y-6">
+        <!-- LLM Config -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">LLM 配置</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">API 地址</label>
+                    <input type="text" x-model="config.llm_api_url" placeholder="https://api.openai.com/v1"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                    <input type="password" x-model="config.llm_api_key" placeholder="sk-..."
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">模型名称</label>
+                    <input type="text" x-model="config.llm_model" placeholder="gpt-4"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+            </div>
+        </div>
+
+        <!-- TTS Config -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">TTS 配置</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">语音角色</label>
+                    <input type="text" x-model="config.tts_voices" placeholder="zh-CN-XiaoxiaoNeural,zh-CN-YunxiNeural"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    <p class="text-xs text-gray-400 mt-1">多个用逗号分隔</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">语速</label>
+                    <input type="text" x-model="config.tts_speed" placeholder="+0%"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">音量</label>
+                    <input type="text" x-model="config.tts_volume" placeholder="+0%"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Output Config -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">视频输出配置</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">分辨率</label>
+                    <select x-model="config.video_resolution"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="1920x1080">1920×1080</option>
+                        <option value="1280x720">1280×720</option>
+                        <option value="1080x1920">1080×1920</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">码率</label>
+                    <input type="text" x-model="config.video_bitrate" placeholder="5000k"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">格式</label>
+                    <select x-model="config.video_format"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="mp4">MP4</option>
+                        <option value="mov">MOV</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Config -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">素材上传配置</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">最大文件大小 (MB)</label>
+                    <input type="number" x-model="config.upload_max_size" placeholder="100"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">允许格式</label>
+                    <input type="text" x-model="config.upload_allowed_formats" placeholder="mp4,mov,avi,jpg,png,webp,mp3,wav,aac"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    <p class="text-xs text-gray-400 mt-1">多个用逗号分隔</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Save Button -->
+        <div class="flex justify-end">
+            <button @click="saveConfig()" :disabled="saving"
+                class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                <span x-show="!saving">保存配置</span>
+                <span x-show="saving" class="flex items-center">
+                    <svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    保存中...
+                </span>
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function adminConfigPage() {
+    return {
+        config: {},
+        loading: false,
+        saving: false,
+
+        async init() {
+            await this.loadConfig();
+        },
+
+        async loadConfig() {
+            this.loading = true;
+            try {
+                const data = await apiCall('GET', '/api/config');
+                if (data) this.config = data.config || data || {};
+            } catch (e) {
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '加载配置失败', type: 'error' } }));
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async saveConfig() {
+            this.saving = true;
+            try {
+                await apiCall('PUT', '/api/config', this.config);
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '配置已保存，即时生效', type: 'success' } }));
+            } catch (e) {
+                const msg = e.data?.error?.message || '保存失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.saving = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

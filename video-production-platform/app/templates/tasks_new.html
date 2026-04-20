@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+{% block title %}文案生成 - 视频生产平台{% endblock %}
+{% block content %}
+<div x-data="tasksNewPage()" x-init="init()">
+    <!-- Page Header -->
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">视频生成</h1>
+        <p class="text-sm text-gray-500 mt-1">按步骤完成文案生成、语音合成、素材选择和视频合成</p>
+    </div>
+
+    <!-- Step Indicator -->
+    <div class="bg-white rounded-lg shadow p-4 mb-6">
+        <div class="flex items-center justify-between">
+            <template x-for="(s, i) in steps" :key="i">
+                <div class="flex items-center" :class="i < steps.length - 1 ? 'flex-1' : ''">
+                    <div class="flex items-center">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors duration-200"
+                             :class="step > i + 1 ? 'bg-green-500 text-white' : step === i + 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'"
+                             x-text="step > i + 1 ? '✓' : i + 1"></div>
+                        <span class="ml-2 text-sm font-medium hidden sm:inline"
+                              :class="step === i + 1 ? 'text-blue-600' : 'text-gray-500'" x-text="s"></span>
+                    </div>
+                    <div x-show="i < steps.length - 1" class="flex-1 h-0.5 mx-4"
+                         :class="step > i + 1 ? 'bg-green-500' : 'bg-gray-200'"></div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Step 1: Topic Input -->
+    <div x-show="step === 1" class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-bold text-gray-800 mb-4">输入主题</h2>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">视频主题</label>
+                <textarea x-model="topic" rows="3" placeholder="请输入视频主题，例如：介绍一款新型保湿面霜的功效和使用方法"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"></textarea>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button @click="generateCopy()" :disabled="!topic.trim() || generating"
+                    class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!generating">生成文案</span>
+                    <span x-show="generating" class="flex items-center">
+                        <svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                        生成中...
+                    </span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Edit Copy -->
+    <div x-show="step === 2" class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-bold text-gray-800 mb-4">编辑文案</h2>
+        <div class="space-y-4">
+            <!-- Forbidden words warning -->
+            <div x-show="forbiddenWords.length > 0" class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                <p class="text-sm text-yellow-800 font-medium">检测到违禁词：</p>
+                <div class="flex flex-wrap gap-1 mt-1">
+                    <template x-for="fw in forbiddenWords" :key="fw.word">
+                        <span class="bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded" x-text="fw.word"></span>
+                    </template>
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">文案内容</label>
+                <textarea x-model="copyContent" rows="8"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-mono"></textarea>
+            </div>
+            <div class="flex items-center space-x-3">
+                <button @click="saveCopy()" :disabled="!copyContent.trim() || saving"
+                    class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    保存修改
+                </button>
+                <button @click="confirmCopy()" :disabled="!copyContent.trim() || saving"
+                    class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    确认锁定文案
+                </button>
+                <button @click="step = 1" class="text-gray-500 hover:text-gray-700 text-sm cursor-pointer">返回上一步</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: TTS & Asset Selection -->
+    <div x-show="step === 3" class="space-y-6">
+        <!-- TTS Section -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">语音合成</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">语音角色</label>
+                    <select x-model="selectedVoice" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="">请选择语音</option>
+                        <template x-for="v in voices" :key="v.id">
+                            <option :value="v.id" x-text="v.name"></option>
+                        </template>
+                    </select>
+                </div>
+                <div class="flex items-end space-x-2">
+                    <button @click="previewVoice()" :disabled="!selectedVoice"
+                        class="bg-gray-100 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-200 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                        试听
+                    </button>
+                    <button @click="synthesizeTTS()" :disabled="!selectedVoice || synthesizing"
+                        class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                        <span x-show="!synthesizing">合成语音</span>
+                        <span x-show="synthesizing" class="flex items-center">
+                            <svg class="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                            合成中...
+                        </span>
+                    </button>
+                </div>
+            </div>
+            <div x-show="ttsAudioUrl" class="mt-4">
+                <audio :src="ttsAudioUrl" controls class="w-full"></audio>
+            </div>
+        </div>
+
+        <!-- Asset Selection -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-bold text-gray-800 mb-4">素材选择</h2>
+            <!-- A Roll -->
+            <div class="mb-6">
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">A Roll（主画面）</h3>
+                <div class="flex items-center gap-2 mb-3">
+                    <select x-model="aRollCategory" @change="loadAssets('a')"
+                        class="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">全部分类</option>
+                        <option value="talent_speaking">达人口播</option>
+                        <option value="product">产品素材</option>
+                        <option value="pexels_broll">Pexels空镜</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto">
+                    <template x-for="asset in aRollAssets" :key="asset.id">
+                        <div @click="toggleAsset('a', asset)" class="relative aspect-video bg-gray-200 rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all duration-200"
+                             :class="selectedARoll.includes(asset.id) ? 'ring-2 ring-blue-600' : ''">
+                            <img :src="asset.thumbnail_path ? '/static/' + asset.thumbnail_path : '/static/placeholder.svg'" class="w-full h-full object-cover">
+                            <div x-show="selectedARoll.includes(asset.id)" class="absolute inset-0 bg-blue-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">已选 <span x-text="selectedARoll.length"></span> 个</p>
+            </div>
+            <!-- B Roll -->
+            <div>
+                <h3 class="text-sm font-semibold text-gray-700 mb-2">B Roll（辅助画面）</h3>
+                <div class="flex items-center gap-2 mb-3">
+                    <select x-model="bRollCategory" @change="loadAssets('b')"
+                        class="px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">全部分类</option>
+                        <option value="talent_speaking">达人口播</option>
+                        <option value="product">产品素材</option>
+                        <option value="pexels_broll">Pexels空镜</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto">
+                    <template x-for="asset in bRollAssets" :key="asset.id">
+                        <div @click="toggleAsset('b', asset)" class="relative aspect-video bg-gray-200 rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all duration-200"
+                             :class="selectedBRoll.includes(asset.id) ? 'ring-2 ring-blue-600' : ''">
+                            <img :src="asset.thumbnail_path ? '/static/' + asset.thumbnail_path : '/static/placeholder.svg'" class="w-full h-full object-cover">
+                            <div x-show="selectedBRoll.includes(asset.id)" class="absolute inset-0 bg-blue-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">已选 <span x-text="selectedBRoll.length"></span> 个</p>
+            </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+            <button @click="step = 4" :disabled="!ttsCompleted || selectedARoll.length === 0"
+                class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                下一步：合成视频
+            </button>
+            <button @click="step = 2" class="text-gray-500 hover:text-gray-700 text-sm cursor-pointer">返回上一步</button>
+        </div>
+    </div>
+
+    <!-- Step 4: Compose Video -->
+    <div x-show="step === 4" class="bg-white rounded-lg shadow p-6">
+        <h2 class="text-lg font-bold text-gray-800 mb-4">合成视频</h2>
+        <div class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">过渡效果</label>
+                    <select x-model="composeParams.transition"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="fade">淡入淡出</option>
+                        <option value="dissolve">溶解</option>
+                        <option value="wipe">擦除</option>
+                        <option value="none">无</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">分辨率</label>
+                    <select x-model="composeParams.resolution"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="1920x1080">1920×1080 (1080p)</option>
+                        <option value="1280x720">1280×720 (720p)</option>
+                        <option value="1080x1920">1080×1920 (竖屏)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">码率</label>
+                    <select x-model="composeParams.bitrate"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                        <option value="8000k">8000k (高质量)</option>
+                        <option value="5000k">5000k (标准)</option>
+                        <option value="3000k">3000k (低码率)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Compose Progress -->
+            <div x-show="composing" class="mt-4">
+                <div class="flex items-center justify-between text-sm text-gray-600 mb-1">
+                    <span>合成中...</span>
+                    <span x-text="composeProgress + '%'"></span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2">
+                    <div class="bg-blue-600 h-2 rounded-full transition-all duration-300" :style="'width:' + composeProgress + '%'"></div>
+                </div>
+            </div>
+
+            <!-- Video Preview -->
+            <div x-show="videoUrl" class="mt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">视频预览</label>
+                <video :src="videoUrl" controls class="w-full max-w-2xl rounded-md border border-gray-200"></video>
+            </div>
+
+            <div class="flex items-center space-x-3">
+                <button @click="composeVideo()" :disabled="composing"
+                    class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                    <span x-show="!composing">开始合成</span>
+                    <span x-show="composing">合成中...</span>
+                </button>
+                <button @click="step = 3" class="text-gray-500 hover:text-gray-700 text-sm cursor-pointer">返回上一步</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function tasksNewPage() {
+    return {
+        steps: ['输入主题', '编辑文案', '选择素材', '合成视频'],
+        step: 1,
+        taskId: null,
+        topic: '',
+        generating: false,
+        copyContent: '',
+        forbiddenWords: [],
+        saving: false,
+        // TTS
+        voices: [],
+        selectedVoice: '',
+        synthesizing: false,
+        ttsCompleted: false,
+        ttsAudioUrl: '',
+        // Assets
+        aRollCategory: '',
+        bRollCategory: '',
+        aRollAssets: [],
+        bRollAssets: [],
+        selectedARoll: [],
+        selectedBRoll: [],
+        // Compose
+        composeParams: { transition: 'fade', resolution: '1920x1080', bitrate: '5000k' },
+        composing: false,
+        composeProgress: 0,
+        videoUrl: '',
+
+        async init() {
+            await this.loadVoices();
+            await this.loadAssets('a');
+            await this.loadAssets('b');
+        },
+
+        async generateCopy() {
+            this.generating = true;
+            try {
+                const data = await apiCall('POST', '/api/copywriting/generate', { topic: this.topic });
+                if (data) {
+                    this.taskId = data.task_id;
+                    this.copyContent = data.copywriting_filtered || data.copywriting_raw || '';
+                    this.forbiddenWords = data.forbidden_words || [];
+                    this.step = 2;
+                }
+            } catch (e) {
+                const msg = e.data?.error?.message || '文案生成失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.generating = false;
+            }
+        },
+
+        async saveCopy() {
+            if (!this.taskId) return;
+            this.saving = true;
+            try {
+                const data = await apiCall('PUT', `/api/copywriting/${this.taskId}`, { content: this.copyContent });
+                if (data) {
+                    this.forbiddenWords = data.forbidden_words || [];
+                    document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '文案已保存', type: 'success' } }));
+                }
+            } catch (e) {
+                const msg = e.data?.error?.message || '保存失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async confirmCopy() {
+            if (!this.taskId) return;
+            this.saving = true;
+            try {
+                await apiCall('POST', `/api/copywriting/${this.taskId}/confirm`);
+                this.step = 3;
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '文案已锁定', type: 'success' } }));
+            } catch (e) {
+                const msg = e.data?.error?.message || '确认失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        async loadVoices() {
+            try {
+                const data = await apiCall('GET', '/api/tts/voices');
+                if (data) this.voices = data.voices || data || [];
+            } catch (e) { /* ignore */ }
+        },
+
+        async previewVoice() {
+            if (!this.selectedVoice) return;
+            try {
+                const data = await apiCall('POST', '/api/tts/preview', { voice_id: this.selectedVoice, text: '这是一段语音试听示例。' });
+                if (data && data.audio_url) {
+                    new Audio(data.audio_url).play();
+                }
+            } catch (e) {
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '试听失败', type: 'error' } }));
+            }
+        },
+
+        async synthesizeTTS() {
+            if (!this.taskId || !this.selectedVoice) return;
+            this.synthesizing = true;
+            try {
+                const data = await apiCall('POST', `/api/tts/${this.taskId}/synthesize`, { voice_id: this.selectedVoice });
+                if (data) {
+                    this.ttsCompleted = true;
+                    this.ttsAudioUrl = data.audio_url || '';
+                    document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '语音合成完成', type: 'success' } }));
+                }
+            } catch (e) {
+                const msg = e.data?.error?.message || '语音合成失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.synthesizing = false;
+            }
+        },
+
+        async loadAssets(roll) {
+            try {
+                const category = roll === 'a' ? this.aRollCategory : this.bRollCategory;
+                let url = '/api/assets?page_size=50';
+                if (category) url += `&category=${category}`;
+                const data = await apiCall('GET', url);
+                if (data) {
+                    const items = data.items || data.assets || data || [];
+                    if (roll === 'a') this.aRollAssets = items;
+                    else this.bRollAssets = items;
+                }
+            } catch (e) { /* ignore */ }
+        },
+
+        toggleAsset(roll, asset) {
+            const list = roll === 'a' ? this.selectedARoll : this.selectedBRoll;
+            const idx = list.indexOf(asset.id);
+            if (idx >= 0) list.splice(idx, 1);
+            else list.push(asset.id);
+        },
+
+        async composeVideo() {
+            if (!this.taskId) return;
+            this.composing = true;
+            this.composeProgress = 0;
+            try {
+                const progressInterval = setInterval(() => {
+                    if (this.composeProgress < 90) this.composeProgress += 5;
+                }, 1000);
+
+                const data = await apiCall('POST', `/api/composition/${this.taskId}/compose`, {
+                    a_roll_ids: this.selectedARoll,
+                    b_roll_ids: this.selectedBRoll,
+                    transition: this.composeParams.transition,
+                    resolution: this.composeParams.resolution,
+                    bitrate: this.composeParams.bitrate
+                });
+
+                clearInterval(progressInterval);
+                this.composeProgress = 100;
+
+                if (data) {
+                    this.videoUrl = data.video_url || '';
+                    document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '视频合成完成', type: 'success' } }));
+                }
+            } catch (e) {
+                const msg = e.data?.error?.message || '视频合成失败';
+                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
+            } finally {
+                this.composing = false;
+            }
+        }
+    };
+}
+</script>
+{% endblock %}
