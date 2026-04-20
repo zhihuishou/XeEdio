@@ -1,0 +1,52 @@
+# 视频生产平台配置文件
+# MVP 阶段：直接配置 API Key
+# 未来：替换为自建 API Gateway 地址，由 Go 服务处理计费
+
+llm:
+  # 模型提供商配置
+  providers:
+    deepseek:
+      name: "DeepSeek"
+      api_url: "https://api.deepseek.com/v1/chat/completions"
+      api_key: ""  # 填写你的 API Key
+      model: "deepseek-chat"
+      key_hint: "从 platform.deepseek.com 获取"
+    
+    doubao:
+      name: "doubao-pro"
+      api_url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
+      api_key: ""  # 填写你的 API Key
+      model: "doubao-pro-32k"
+      key_hint: "从火山引擎控制台获取"
+    
+    gpt-4o-mini:
+      name: "gpt-4o-mini"
+      api_url: "https://api.openai.com/v1/chat/completions"
+      api_key: ""  # 填写你的 API Key
+      model: "gpt-4o-mini"
+      key_hint: "从 platform.openai.com 获取"
+
+  # 默认使用的模型
+  default_provider: "deepseek"
+
+  # 未来：替换为自建 API Gateway（Go 服务）
+  # gateway_url: "http://localhost:8080/api/v1/llm"
+  # gateway_enabled: false
+
+tts:
+  # Edge-TTS 配置（免费）
+  voices: "zh-CN-XiaoxiaoNeural,zh-CN-YunxiNeural"
+  speed: "+0%"
+  volume: "+0%"
+
+video:
+  resolution: "1080x1920"
+  bitrate: "8M"
+  format: "mp4"
+
+upload:
+  max_size_mb: 500
+  allowed_formats: "mp4,mov,avi,jpg,png,webp,mp3,wav,aac"
+
+batch:
+  max_concurrency: 3

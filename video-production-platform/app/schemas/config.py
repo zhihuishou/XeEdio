@@ -32,3 +32,18 @@ class ConfigResponse(BaseModel):
     """Response containing all configuration items."""
 
     configs: dict[str, ConfigItem]
+
+
+class LLMProviderItem(BaseModel):
+    """LLM provider info (without API key)."""
+
+    id: str
+    name: str
+    model: str
+    key_hint: str
+
+
+class LLMProvidersResponse(BaseModel):
+    """Response containing available LLM providers."""
+
+    providers: list[LLMProviderItem]

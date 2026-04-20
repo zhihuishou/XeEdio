@@ -1,1 +1,17 @@
 2026-04-20 13:28:22 [INFO] [request_id=test-request-123] app.llm: Test LLM log
+2026-04-20 18:23:15 [INFO] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API call attempt 1/3 to https://api.deepseek.com/v1 with model deepseek-chat
+2026-04-20 18:23:15 [WARNING] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API error (attempt 1): LLM API returned status 401: Authentication Fails (governor)
+2026-04-20 18:23:20 [INFO] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API call attempt 2/3 to https://api.deepseek.com/v1 with model deepseek-chat
+2026-04-20 18:23:20 [WARNING] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API error (attempt 2): LLM API returned status 401: Authentication Fails (governor)
+2026-04-20 18:23:25 [INFO] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API call attempt 3/3 to https://api.deepseek.com/v1 with model deepseek-chat
+2026-04-20 18:23:26 [WARNING] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API error (attempt 3): LLM API returned status 401: Authentication Fails (governor)
+2026-04-20 18:23:26 [ERROR] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: LLM API call failed after all retries: LLM API returned status 401: Authentication Fails (governor)
+2026-04-20 18:23:26 [ERROR] [request_id=3ef377fa-6b85-4f70-affb-c8a4efd4b5df] app.llm: Copywriting generation failed: LLM API returned status 401: Authentication Fails (governor)
+2026-04-20 18:52:17 [INFO] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API call attempt 1/3 to https://api.deepseek.com/v1/chat/completions with model deepseek-chat
+2026-04-20 18:52:17 [WARNING] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API error (attempt 1): LLM API returned status 401: {"error":{"message":"Authentication Fails, Your api key: ****-key is invalid","type":"authentication_error","param":null,"code":"invalid_request_error"}}
+2026-04-20 18:52:22 [INFO] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API call attempt 2/3 to https://api.deepseek.com/v1/chat/completions with model deepseek-chat
+2026-04-20 18:52:22 [WARNING] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API error (attempt 2): LLM API returned status 401: {"error":{"message":"Authentication Fails, Your api key: ****-key is invalid","type":"authentication_error","param":null,"code":"invalid_request_error"}}
+2026-04-20 18:52:27 [INFO] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API call attempt 3/3 to https://api.deepseek.com/v1/chat/completions with model deepseek-chat
+2026-04-20 18:52:27 [WARNING] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API error (attempt 3): LLM API returned status 401: {"error":{"message":"Authentication Fails, Your api key: ****-key is invalid","type":"authentication_error","param":null,"code":"invalid_request_error"}}
+2026-04-20 18:52:27 [ERROR] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: LLM API call failed after all retries: LLM API returned status 401: {"error":{"message":"Authentication Fails, Your api key: ****-key is invalid","type":"authentication_error","param":null,"code":"invalid_request_error"}}
+2026-04-20 18:52:27 [ERROR] [request_id=fb562514-6241-4131-8f87-efc4c8a4c9f9] app.llm: Copywriting generation failed: LLM API returned status 401: {"error":{"message":"Authentication Fails, Your api key: ****-key is invalid","type":"authentication_error","param":null,"code":"invalid_request_error"}}
