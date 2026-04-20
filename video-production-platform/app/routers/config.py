@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.models.database import User, get_db
-from app.schemas.config import ConfigItem, ConfigResponse, ConfigUpdateRequest
+from app.schemas.config import ConfigItem, ConfigResponse, ConfigUpdateRequest, LLMProvidersResponse
 from app.services.config_service import ConfigService
+from app.services.external_config import ExternalConfig
 from app.utils.auth import require_role
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -45,3 +46,26 @@ def update_configs(
         key: ConfigItem(**item) for key, item in all_configs.items()
     }
     return ConfigResponse(configs=configs)
+
+
+@router.get("/llm-providers", response_model=LLMProvidersResponse)
+def get_llm_providers(
+    _current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    """Get available LLM providers from config.yaml.
+    
+    Returns list of providers with name, model, key_hint.
+    API keys are NOT returned for security.
+    """
+    config = ExternalConfig.get_instance()
+    providers = config.get_all_llm_providers()
+    # Remove api_key from response for security
+    safe_providers = []
+    for p in providers:
+        safe_providers.append({
+            "id": p["id"],
+            "name": p["name"],
+            "model": p["model"],
+            "key_hint": p["key_hint"],
+        })
+    return LLMProvidersResponse(providers=safe_providers)

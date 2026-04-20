@@ -14,12 +14,41 @@ from app.schemas.copywriting import (
     ForbiddenWordMatchItem,
 )
 from app.services.copywriting_service import CopywritingService
+from app.services.external_config import ExternalConfig
 from app.utils.auth import require_role
 from app.utils.errors import AppError, ErrorCode, NotFoundError
 
 logger = logging.getLogger("app.llm")
 
 router = APIRouter(prefix="/api/copywriting", tags=["copywriting"])
+
+
+def _build_llm_config(body: CopywritingGenerateRequest) -> dict | None:
+    """Resolve LLM config from provider_id + optional api_key override.
+
+    Priority:
+      1. provider_id -> look up api_url/model from config.yaml
+      2. api_key from request body overrides config.yaml api_key
+      3. If no provider_id, fall back to config.yaml default_provider
+      4. If still nothing, return None (service will use legacy DB config)
+    """
+    ext = ExternalConfig.get_instance()
+    provider_id = body.provider_id or ext.get_default_provider()
+
+    provider = ext.get_llm_provider(provider_id)
+    if not provider:
+        return None
+
+    # Request-level api_key overrides config.yaml api_key
+    api_key = body.api_key or provider["api_key"]
+    if not api_key:
+        return None
+
+    return {
+        "api_url": provider["api_url"],
+        "api_key": api_key,
+        "model": provider["model"],
+    }
 
 
 @router.post("/generate", response_model=CopywritingResponse)
@@ -34,12 +63,14 @@ def generate_copywriting(
     Creates a new Task if task_id is not provided.
     """
     service = CopywritingService(db)
+    llm_config = _build_llm_config(body)
 
     try:
         task = service.generate_copywriting(
             topic=body.topic,
             task_id=body.task_id,
             user_id=current_user.id,
+            llm_config=llm_config,
         )
     except ValueError as e:
         raise NotFoundError(message=str(e))
@@ -92,7 +123,6 @@ def get_copywriting(
     if not task:
         raise NotFoundError(message="Task not found")
 
-    # Run check on current text to get matches
     service = CopywritingService(db)
     text_to_check = task.copywriting_final or task.copywriting_filtered or task.copywriting_raw or ""
     check_result = service.check_and_filter_text(text_to_check) if text_to_check else {"status": "passed", "matches": []}
@@ -135,21 +165,17 @@ def edit_copywriting(
     if not task:
         raise NotFoundError(message="Task not found")
 
-    # Check if copy is locked (confirmed)
     if task.status == "copy_confirmed":
         raise AppError(
             message="文案已确认锁定，无法编辑",
             error_code=ErrorCode.COPY_LOCKED,
         )
 
-    # Update the final copywriting text
     task.copywriting_final = body.copywriting_final
 
-    # Re-run forbidden word check
     service = CopywritingService(db)
     check_result = service.check_and_filter_text(body.copywriting_final)
 
-    # Update filtered version
     task.copywriting_filtered = check_result["filtered_text"]
     from app.models.database import utcnow
     task.updated_at = utcnow()
@@ -184,24 +210,18 @@ def confirm_copywriting(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("intern", "admin")),
 ):
-    """Confirm and lock copywriting for a task.
-
-    After confirmation, the copywriting cannot be edited (returns 409 COPY_LOCKED).
-    """
+    """Confirm and lock copywriting for a task."""
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
         raise NotFoundError(message="Task not found")
 
-    # Already confirmed
     if task.status == "copy_confirmed":
         raise AppError(
             message="文案已确认锁定",
             error_code=ErrorCode.COPY_LOCKED,
         )
 
-    # Determine the final text to lock
     final_text = task.copywriting_final or task.copywriting_filtered or task.copywriting_raw or ""
-
     task.copywriting_final = final_text
     task.status = "copy_confirmed"
     from app.models.database import utcnow

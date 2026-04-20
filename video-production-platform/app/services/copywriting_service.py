@@ -38,8 +38,17 @@ class CopywritingService:
         self.config = ConfigService.get_instance()
         self.rag = RAGService.get_instance()
 
-    def _get_llm_config(self) -> dict:
-        """Get LLM API configuration from ConfigService."""
+    def _get_llm_config(self, override_config: dict = None) -> dict:
+        """Get LLM API configuration.
+
+        Args:
+            override_config: Optional dict with api_url, api_key, model to override system defaults.
+
+        Returns:
+            Dict with api_url, api_key, model.
+        """
+        if override_config:
+            return override_config
         return {
             "api_url": self.config.get_config("llm_api_url", self.db, "https://api.deepseek.com/v1/chat/completions"),
             "api_key": self.config.get_config("llm_api_key", self.db, ""),
@@ -69,8 +78,12 @@ class CopywritingService:
             {"role": "user", "content": f"请为以下主题生成短视频文案：{topic}"},
         ]
 
-    def _call_llm_api(self, messages: list[dict]) -> str:
+    def _call_llm_api(self, messages: list[dict], override_config: dict = None) -> str:
         """Call LLM API with retry logic.
+
+        Args:
+            messages: List of message dicts with role and content.
+            override_config: Optional dict with api_url, api_key, model to override system defaults.
 
         Timeout: 30 seconds per request.
         Retries: up to 2 times with 5-second intervals.
@@ -81,7 +94,7 @@ class CopywritingService:
         Raises:
             Exception with appropriate error info on failure.
         """
-        config = self._get_llm_config()
+        config = self._get_llm_config(override_config)
         api_url = config["api_url"]
         api_key = config["api_key"]
         model = config["model"]
@@ -134,13 +147,14 @@ class CopywritingService:
         logger.error("LLM API call failed after all retries: %s", last_error)
         raise Exception(last_error)
 
-    def generate_copywriting(self, topic: str, task_id: Optional[str] = None, user_id: str = "") -> Task:
+    def generate_copywriting(self, topic: str, task_id: Optional[str] = None, user_id: str = "", llm_config: dict = None) -> Task:
         """Generate copywriting for a topic.
 
         Args:
             topic: Video topic.
             task_id: Optional existing task ID to update.
             user_id: ID of the user requesting generation.
+            llm_config: Optional dict with api_url, api_key, model to override system defaults.
 
         Returns:
             The Task record with generated copywriting.
@@ -164,7 +178,7 @@ class CopywritingService:
 
         # Build prompt and call LLM
         messages = self._build_prompt(topic)
-        raw_text = self._call_llm_api(messages)
+        raw_text = self._call_llm_api(messages, llm_config)
 
         # Run forbidden word check
         all_words = self.db.query(ForbiddenWord).all()

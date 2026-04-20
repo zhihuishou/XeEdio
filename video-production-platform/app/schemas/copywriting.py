@@ -10,6 +10,8 @@ class CopywritingGenerateRequest(BaseModel):
 
     topic: str = Field(..., min_length=1, description="Video topic for copywriting generation")
     task_id: Optional[str] = Field(None, description="Existing task ID to update, or auto-create if omitted")
+    provider_id: Optional[str] = Field(None, description="LLM provider ID from config.yaml (e.g. deepseek, doubao-pro, gpt-4o-mini")
+    api_key: Optional[str] = Field(None, description="API key for the selected provider (overrides config.yaml)")
 
 
 class CopywritingEditRequest(BaseModel):

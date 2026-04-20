@@ -32,12 +32,22 @@
         <h2 class="text-lg font-bold text-gray-800 mb-4">输入主题</h2>
         <div class="space-y-4">
             <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">选择模型</label>
+                <select x-model="selectedModel"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm">
+                    <option value="">请选择模型</option>
+                    <template x-for="m in models" :key="m.id">
+                        <option :value="m.id" x-text="m.name"></option>
+                    </template>
+                </select>
+            </div>
+            <div>
                 <label class="block text-sm font-medium text-gray-700 mb-1">视频主题</label>
                 <textarea x-model="topic" rows="3" placeholder="请输入视频主题，例如：介绍一款新型保湿面霜的功效和使用方法"
                     class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"></textarea>
             </div>
             <div class="flex items-center space-x-3">
-                <button @click="generateCopy()" :disabled="!topic.trim() || generating"
+                <button @click="generateCopy()" :disabled="!topic.trim() || !selectedModel || generating"
                     class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 cursor-pointer transition-colors duration-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed">
                     <span x-show="!generating">生成文案</span>
                     <span x-show="generating" class="flex items-center">
@@ -253,6 +263,9 @@ function tasksNewPage() {
         step: 1,
         taskId: null,
         topic: '',
+        // Model selection - loaded from backend
+        models: [],
+        selectedModel: '',
         generating: false,
         copyContent: '',
         forbiddenWords: [],
@@ -277,15 +290,29 @@ function tasksNewPage() {
         videoUrl: '',
 
         async init() {
+            await this.loadModels();
             await this.loadVoices();
             await this.loadAssets('a');
             await this.loadAssets('b');
         },
 
+        async loadModels() {
+            try {
+                const data = await apiCall('GET', '/api/config/llm-providers');
+                if (data && data.providers) {
+                    this.models = data.providers;
+                }
+            } catch (e) { /* ignore */ }
+        },
+
         async generateCopy() {
+            if (!this.topic.trim() || !this.selectedModel) return;
             this.generating = true;
             try {
-                const data = await apiCall('POST', '/api/copywriting/generate', { topic: this.topic });
+                const data = await apiCall('POST', '/api/copywriting/generate', { 
+                    topic: this.topic,
+                    provider_id: this.selectedModel
+                });
                 if (data) {
                     this.taskId = data.task_id;
                     this.copyContent = data.copywriting_filtered || data.copywriting_raw || '';
