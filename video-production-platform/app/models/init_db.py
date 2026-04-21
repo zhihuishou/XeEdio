@@ -6,7 +6,7 @@ Handles schema migration for new columns on existing tables.
 
 import logging
 
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy import text
 
 from app.models.database import (
@@ -21,7 +21,15 @@ from app.models.database import (
 
 logger = logging.getLogger(__name__)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def _hash_password(password: str) -> str:
+    """Hash a password using bcrypt directly (Python 3.13+ compatible)."""
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    """Verify a password against a bcrypt hash."""
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 DEFAULT_CONFIGS = [
     {
@@ -133,7 +141,7 @@ def _seed_admin_user(db):
         admin = User(
             id=generate_uuid(),
             username="admin",
-            password_hash=pwd_context.hash("admin123"),
+            password_hash=_hash_password("admin123"),
             role="admin",
             created_at=utcnow(),
             updated_at=utcnow(),
