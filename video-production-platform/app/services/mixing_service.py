@@ -135,8 +135,10 @@ class MixingService:
     def execute_mix(self, task_id: str) -> None:
         """Run the full mixing pipeline in a background thread.
 
-        Uses its own database session (SessionLocal) because the request
-        session is not safe to share across threads.
+        Routes to the correct pipeline based on mixing_mode:
+        - pure_mix: A-roll audio + AI Director + Whisper subtitles
+        - mix_with_script: TTS audio + AI Director + script subtitles
+        - broll_voiceover: TTS audio + blind-cut B-roll + script subtitles
         """
         db = SessionLocal()
         try:
@@ -147,6 +149,7 @@ class MixingService:
 
             params = json.loads(task.mix_params)
 
+            mixing_mode = params.get("mixing_mode", "pure_mix")
             aspect_ratio = params.get("aspect_ratio", "9:16")
             transition = params.get("transition", "none")
             clip_duration = params.get("clip_duration", 5)
@@ -158,7 +161,7 @@ class MixingService:
             bgm_asset_id = params.get("bgm_asset_id")
             bgm_volume = params.get("bgm_volume", 0.2)
 
-            # Resolve asset file paths from TaskAsset records
+            # Resolve asset file paths
             a_roll_assets = (
                 db.query(TaskAsset)
                 .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "a_roll")
@@ -184,81 +187,161 @@ class MixingService:
                 if asset and asset.file_path:
                     b_roll_paths.append(asset.file_path)
 
-            all_video_paths = a_roll_paths + b_roll_paths
-
-            # Prepare output directory
             output_dir = f"storage/tasks/{task_id}"
             os.makedirs(output_dir, exist_ok=True)
 
-            # Determine audio source
-            audio_file: Optional[str] = None
+            aspect_resolutions = {"16:9": (1920, 1080), "9:16": (1080, 1920), "1:1": (1080, 1080)}
+            video_w, video_h = aspect_resolutions.get(aspect_ratio, (1080, 1920))
 
-            if tts_text:
-                # Use TTS to generate audio
-                audio_file = os.path.join(output_dir, "tts_audio.mp3")
-                self._synthesize_tts(tts_text, tts_voice, audio_file)
-            else:
-                # Extract audio from A-roll videos
-                audio_file = os.path.join(output_dir, "extracted_audio.mp3")
-                mixing_engine.extract_audio_from_videos(a_roll_paths, audio_file)
+            ai_director_used = False
 
             # Generate each version
             output_paths = []
             for version in range(1, video_count + 1):
-                output_path = os.path.join(output_dir, f"output-{version}.mp4")
-                logger.info(
-                    "generating version %d/%d for task %s",
-                    version, video_count, task_id,
-                )
-                mixing_engine.combine_videos(
-                    combined_video_path=output_path,
-                    video_paths=all_video_paths,
-                    audio_file=audio_file,
-                    video_aspect=aspect_ratio,
-                    video_concat_mode=concat_mode,
-                    video_transition=transition,
-                    max_clip_duration=clip_duration,
-                )
+                version_output = os.path.join(output_dir, f"output-{version}.mp4")
+                logger.info("generating version %d/%d for task %s (mode=%s)", version, video_count, task_id, mixing_mode)
 
-                # Mix BGM if enabled
+                if mixing_mode == "pure_mix":
+                    # --- Pure Mix: A-roll audio + AI Director ---
+                    audio_file = os.path.join(output_dir, f"extracted_audio-{version}.mp3")
+                    mixing_engine.extract_audio_from_videos(a_roll_paths, audio_file)
+
+                    from app.services.ai_director_service import AIDirectorService
+                    ai_director = AIDirectorService(task_id, output_dir)
+                    transcript = ai_director._transcribe_audio(audio_file)
+                    raw_output, ai_used = ai_director.run_pipeline(
+                        a_roll_paths, b_roll_paths, transcript,
+                        aspect_ratio=aspect_ratio, transition=transition, audio_file=audio_file,
+                    )
+                    if ai_used:
+                        ai_director_used = True
+
+                    # Subtitles (Whisper)
+                    ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
+                    try:
+                        mixing_engine._generate_subtitles(audio_file, ass_path, video_w, video_h)
+                        if os.path.exists(ass_path) and os.path.getsize(ass_path) > 0:
+                            final_path = os.path.join(output_dir, f"final-{version}.mp4")
+                            mixing_engine.burn_subtitles(raw_output, ass_path, final_path)
+                            os.replace(final_path, version_output)
+                        else:
+                            import shutil as _shutil
+                            _shutil.copy(raw_output, version_output)
+                    except Exception as e:
+                        logger.warning("subtitle failed: %s", str(e)[:200])
+                        import shutil as _shutil
+                        if raw_output != version_output:
+                            _shutil.copy(raw_output, version_output)
+
+                elif mixing_mode == "mix_with_script":
+                    # --- Mix + AI Script: TTS + AI Director ---
+                    from app.services.ai_tts_service import AITTSService
+                    from app.services.ai_director_service import AIDirectorService
+                    ai_tts = AITTSService()
+                    audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+
+                    ai_director = AIDirectorService(task_id, output_dir)
+                    raw_output, ai_used = ai_director.run_pipeline(
+                        a_roll_paths, b_roll_paths, tts_text,
+                        aspect_ratio=aspect_ratio, transition=transition, audio_file=audio_file,
+                    )
+                    if ai_used:
+                        ai_director_used = True
+
+                    # Script-based subtitles
+                    ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
+                    try:
+                        mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
+                        final_path = os.path.join(output_dir, f"final-{version}.mp4")
+                        mixing_engine.burn_subtitles(raw_output, ass_path, final_path)
+                        os.replace(final_path, version_output)
+                    except Exception as e:
+                        logger.warning("subtitle failed: %s", str(e)[:200])
+                        import shutil as _shutil
+                        if raw_output != version_output:
+                            _shutil.copy(raw_output, version_output)
+
+                elif mixing_mode == "broll_voiceover":
+                    # --- Pure B-roll + AI Voiceover ---
+                    from app.services.ai_tts_service import AITTSService
+                    ai_tts = AITTSService()
+                    audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+
+                    mixing_engine.combine_videos(
+                        combined_video_path=version_output,
+                        video_paths=b_roll_paths,
+                        audio_file=audio_file,
+                        video_aspect=aspect_ratio,
+                        video_concat_mode=concat_mode,
+                        video_transition=transition,
+                        max_clip_duration=clip_duration,
+                        a_roll_paths=[],
+                        b_roll_paths=b_roll_paths,
+                    )
+
+                    # Script-based subtitles
+                    ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
+                    try:
+                        mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
+                        final_path = os.path.join(output_dir, f"final-{version}.mp4")
+                        mixing_engine.burn_subtitles(version_output, ass_path, final_path)
+                        os.replace(final_path, version_output)
+                    except Exception as e:
+                        logger.warning("subtitle failed: %s", str(e)[:200])
+
+                else:
+                    # Fallback: old blind-cut logic
+                    audio_file = os.path.join(output_dir, f"extracted_audio-{version}.mp3")
+                    mixing_engine.extract_audio_from_videos(a_roll_paths, audio_file)
+                    mixing_engine.combine_videos(
+                        combined_video_path=version_output,
+                        video_paths=a_roll_paths + b_roll_paths,
+                        audio_file=audio_file,
+                        video_aspect=aspect_ratio,
+                        video_concat_mode=concat_mode,
+                        video_transition=transition,
+                        max_clip_duration=clip_duration,
+                        a_roll_paths=a_roll_paths,
+                        b_roll_paths=b_roll_paths,
+                    )
+
+                # BGM mixing (all modes)
                 if bgm_enabled:
                     bgm_file = self._resolve_bgm_file(bgm_asset_id, db)
                     if bgm_file:
                         bgm_output = os.path.join(output_dir, f"output-{version}-bgm.mp4")
                         mixing_engine.mix_bgm(
-                            main_audio_path=output_path,
+                            main_audio_path=version_output,
                             bgm_file=bgm_file,
                             output_path=bgm_output,
                             bgm_volume=bgm_volume,
                         )
-                        # Replace original output with BGM version
-                        os.replace(bgm_output, output_path)
+                        os.replace(bgm_output, version_output)
 
-                output_paths.append(output_path)
+                output_paths.append(version_output)
 
-            # Collect metadata from the first output
+            # Store ai_director_used in mix_params
+            params["ai_director_used"] = ai_director_used
+            task.mix_params = json.dumps(params, ensure_ascii=False)
+
+            # Collect metadata
             video_resolution = None
             video_duration = None
             video_file_size = None
             if output_paths and os.path.exists(output_paths[0]):
-                video_file_size = sum(
-                    os.path.getsize(p) for p in output_paths if os.path.exists(p)
-                )
+                video_file_size = sum(os.path.getsize(p) for p in output_paths if os.path.exists(p))
                 video_resolution = self._get_resolution_label(aspect_ratio)
                 video_duration = self._probe_duration(output_paths[0])
 
-            # Update task to video_done
             task.status = "video_done"
-            task.video_paths = json.dumps(
-                [os.path.relpath(p) for p in output_paths], ensure_ascii=False
-            )
+            task.video_paths = json.dumps([os.path.relpath(p) for p in output_paths], ensure_ascii=False)
             task.video_resolution = video_resolution
             task.video_duration = video_duration
             task.video_file_size = video_file_size
             task.updated_at = utcnow()
             db.commit()
 
-            logger.info("task %s completed: %d videos generated", task_id, len(output_paths))
+            logger.info("task %s completed: %d videos, ai_director=%s", task_id, len(output_paths), ai_director_used)
 
         except Exception as e:
             logger.exception("task %s failed: %s", task_id, str(e))
