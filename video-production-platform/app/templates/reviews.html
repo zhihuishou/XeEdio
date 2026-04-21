@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}审核 - 视频生产平台{% endblock %}
+{% block nav_reviews %}active{% endblock %}
+{% block topbar %}<span class="text-sm font-semibold text-slate-700">内容审核</span>{% endblock %}
 {% block content %}
 <div x-data="reviewsPage()" x-init="init()">
     <!-- Page Header -->
