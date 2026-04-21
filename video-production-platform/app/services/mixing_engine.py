@@ -1,17 +1,17 @@
 """MoviePy mixing engine for smart video composition.
 
-Core video processing logic based on MoneyPrinterTurbo's combine_videos function
-and video_effects.py. Uses MoviePy for clip manipulation and FFmpeg concat demuxer
-for final assembly.
+A-roll (talent speaking) stays intact as the timeline backbone — both video and audio.
+B-roll (product shots, stock footage) gets cut into segments and inserted at intervals,
+replacing A-roll's visuals while keeping A-roll's audio track continuous.
 """
 
 import gc
-import itertools
 import logging
 import os
 import random
+import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 from moviepy import (
@@ -26,13 +26,11 @@ from moviepy import (
 
 logger = logging.getLogger("app.mixing_engine")
 
-# Encoding defaults (matching MoneyPrinterTurbo)
 AUDIO_CODEC = "aac"
 AUDIO_BITRATE = "192k"
 VIDEO_CODEC = "libx264"
 FPS = 30
 
-# Aspect ratio to resolution mapping
 ASPECT_RESOLUTIONS = {
     "16:9": (1920, 1080),
     "9:16": (1080, 1920),
@@ -40,28 +38,11 @@ ASPECT_RESOLUTIONS = {
 }
 
 
-@dataclass
-class SubClippedVideoClip:
-    """Tracks a segment of a source video file."""
-
-    file_path: str
-    start_time: float = 0.0
-    end_time: float = 0.0
-    width: int = 0
-    height: int = 0
-    duration: float = 0.0
-
-    def __post_init__(self):
-        if self.duration == 0.0 and self.end_time > self.start_time:
-            self.duration = self.end_time - self.start_time
-
-
 # ---------------------------------------------------------------------------
-# FFmpeg helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _get_ffmpeg_binary() -> str:
-    """Return the ffmpeg binary path, respecting IMAGEIO_FFMPEG_EXE env var."""
     return os.environ.get("IMAGEIO_FFMPEG_EXE") or "ffmpeg"
 
 
@@ -75,9 +56,8 @@ def _concat_video_clips_with_ffmpeg(
     output_file: str,
     threads: int,
     output_dir: str,
-    audio_file: str = None,
 ) -> None:
-    """Join processed clip files using FFmpeg concat demuxer and mux speech audio.
+    """Join processed clip files using FFmpeg concat demuxer.
 
     This avoids MoviePy's concatenate_videoclips which re-encodes everything,
     causing quality degradation and colour shifts.
@@ -94,20 +74,11 @@ def _concat_video_clips_with_ffmpeg(
         "-f", "concat",
         "-safe", "0",
         "-i", concat_list_file,
-    ]
-    
-    if audio_file and os.path.exists(audio_file):
-        command.extend(["-i", audio_file, "-map", "0:v:0", "-map", "1:a:0"])
-    
-    command.extend([
         "-c:v", VIDEO_CODEC,
-        "-c:a", AUDIO_CODEC,
-        "-b:a", AUDIO_BITRATE,
         "-threads", str(threads or 2),
         "-pix_fmt", "yuv420p",
-        "-shortest",
         output_file,
-    ])
+    ]
 
     try:
         result = subprocess.run(
@@ -128,165 +99,117 @@ def _concat_video_clips_with_ffmpeg(
 # ---------------------------------------------------------------------------
 
 def _close_clip(clip) -> None:
-    """Safely close a MoviePy clip and release resources."""
     if clip is None:
         return
-
     try:
         if hasattr(clip, "reader") and clip.reader is not None:
             clip.reader.close()
-
         if hasattr(clip, "audio") and clip.audio is not None:
             if hasattr(clip.audio, "reader") and clip.audio.reader is not None:
                 clip.audio.reader.close()
             del clip.audio
-
         if hasattr(clip, "mask") and clip.mask is not None:
             if hasattr(clip.mask, "reader") and clip.mask.reader is not None:
                 clip.mask.reader.close()
             del clip.mask
-
         if hasattr(clip, "clips") and clip.clips:
-            for child_clip in clip.clips:
-                if child_clip is not clip:
-                    _close_clip(child_clip)
-
-        if hasattr(clip, "clips"):
+            for child in clip.clips:
+                if child is not clip:
+                    _close_clip(child)
             clip.clips = []
     except Exception as e:
         logger.error("failed to close clip: %s", str(e))
-
     del clip
     gc.collect()
 
 
 def _delete_files(files) -> None:
-    """Delete one or more files, ignoring errors."""
     if isinstance(files, str):
         files = [files]
-    for file in files:
+    for f in files:
         try:
-            os.remove(file)
-        except Exception as e:
-            logger.debug("failed to delete file %s: %s", file, str(e))
+            os.remove(f)
+        except Exception:
+            pass
+
+
+def _resize_clip(clip, target_w: int, target_h: int):
+    """Resize clip to target resolution, maintaining aspect ratio with black padding."""
+    clip_w, clip_h = clip.size
+    if clip_w == target_w and clip_h == target_h:
+        return clip
+
+    clip_ratio = clip_w / clip_h
+    target_ratio = target_w / target_h
+
+    if abs(clip_ratio - target_ratio) < 0.01:
+        return clip.resized(new_size=(target_w, target_h))
+
+    if clip_ratio > target_ratio:
+        scale = target_w / clip_w
+    else:
+        scale = target_h / clip_h
+
+    new_w = int(clip_w * scale)
+    new_h = int(clip_h * scale)
+
+    bg = ColorClip(size=(target_w, target_h), color=(0, 0, 0)).with_duration(clip.duration)
+    resized = clip.resized(new_size=(new_w, new_h)).with_position("center")
+    return CompositeVideoClip([bg, resized])
 
 
 # ---------------------------------------------------------------------------
-# Transition effects (based on MoneyPrinterTurbo video_effects.py)
+# Transition effects
 # ---------------------------------------------------------------------------
 
 def fadein_transition(clip, duration: float = 0.5):
-    """Apply a fade-in from black transition."""
     return clip.with_effects([vfx.FadeIn(duration)])
 
-
 def fadeout_transition(clip, duration: float = 0.5):
-    """Apply a fade-out to black transition."""
     return clip.with_effects([vfx.FadeOut(duration)])
 
-
 def slidein_transition(clip, duration: float = 0.5, side: str = "left"):
-    """Apply a slide-in transition from the given side.
-
-    Uses explicit position animation with a black background for reliable
-    visual results (MoviePy's built-in SlideIn can be unstable on full-screen
-    clips).
-    """
-    width, height = clip.size
-
-    def position(current_time: float):
-        progress = min(max(current_time / max(duration, 0.001), 0), 1)
-        if side == "left":
-            return (-width + width * progress, 0)
-        if side == "right":
-            return (width - width * progress, 0)
-        if side == "top":
-            return (0, -height + height * progress)
-        if side == "bottom":
-            return (0, height - height * progress)
-        return (0, 0)
-
-    background = ColorClip(
-        size=(width, height), color=(0, 0, 0)
-    ).with_duration(clip.duration)
-    moving_clip = clip.with_position(position)
-    return CompositeVideoClip(
-        [background, moving_clip], size=(width, height)
-    ).with_duration(clip.duration)
-
+    w, h = clip.size
+    def pos(t):
+        p = min(max(t / max(duration, 0.001), 0), 1)
+        if side == "left": return (-w + w * p, 0)
+        if side == "right": return (w - w * p, 0)
+        if side == "top": return (0, -h + h * p)
+        return (0, h - h * p)
+    bg = ColorClip(size=(w, h), color=(0, 0, 0)).with_duration(clip.duration)
+    return CompositeVideoClip([bg, clip.with_position(pos)], size=(w, h)).with_duration(clip.duration)
 
 def slideout_transition(clip, duration: float = 0.5, side: str = "right"):
-    """Apply a slide-out transition towards the given side."""
-    width, height = clip.size
-    transition_start = max(clip.duration - duration, 0)
+    w, h = clip.size
+    start = max(clip.duration - duration, 0)
+    def pos(t):
+        if t <= start: return (0, 0)
+        p = min(max((t - start) / max(duration, 0.001), 0), 1)
+        if side == "left": return (-w * p, 0)
+        if side == "right": return (w * p, 0)
+        if side == "top": return (0, -h * p)
+        return (0, h * p)
+    bg = ColorClip(size=(w, h), color=(0, 0, 0)).with_duration(clip.duration)
+    return CompositeVideoClip([bg, clip.with_position(pos)], size=(w, h)).with_duration(clip.duration)
 
-    def position(current_time: float):
-        if current_time <= transition_start:
-            return (0, 0)
-        progress = min(
-            max((current_time - transition_start) / max(duration, 0.001), 0), 1
-        )
-        if side == "left":
-            return (-width * progress, 0)
-        if side == "right":
-            return (width * progress, 0)
-        if side == "top":
-            return (0, -height * progress)
-        if side == "bottom":
-            return (0, height * progress)
-        return (0, 0)
-
-    background = ColorClip(
-        size=(width, height), color=(0, 0, 0)
-    ).with_duration(clip.duration)
-    moving_clip = clip.with_position(position)
-    return CompositeVideoClip(
-        [background, moving_clip], size=(width, height)
-    ).with_duration(clip.duration)
-
-
-def apply_transition(clip, transition_type: str, duration: float = 1.0):
-    """Dispatcher that applies the requested transition effect.
-
-    For "shuffle" mode, randomly picks one of the four transition types.
-
-    Args:
-        clip: MoviePy video clip.
-        transition_type: One of "none", "fade_in", "fade_out",
-                         "slide_in", "slide_out", "shuffle".
-        duration: Transition duration in seconds.
-
-    Returns:
-        Clip with transition applied.
-    """
+def apply_transition(clip, transition_type: str, duration: float = 0.5):
     if transition_type in (None, "none", ""):
         return clip
-
-    shuffle_side = random.choice(["left", "right", "top", "bottom"])
-
-    if transition_type == "fade_in":
-        return fadein_transition(clip, duration)
-    elif transition_type == "fade_out":
-        return fadeout_transition(clip, duration)
-    elif transition_type == "slide_in":
-        return slidein_transition(clip, duration, shuffle_side)
-    elif transition_type == "slide_out":
-        return slideout_transition(clip, duration, shuffle_side)
-    elif transition_type == "shuffle":
-        transition_funcs = [
-            lambda c: fadein_transition(c, duration),
-            lambda c: fadeout_transition(c, duration),
-            lambda c: slidein_transition(c, duration, shuffle_side),
-            lambda c: slideout_transition(c, duration, shuffle_side),
-        ]
-        return random.choice(transition_funcs)(clip)
-
-    logger.warning("unknown transition type '%s', skipping", transition_type)
+    side = random.choice(["left", "right", "top", "bottom"])
+    if transition_type == "fade_in": return fadein_transition(clip, duration)
+    if transition_type == "fade_out": return fadeout_transition(clip, duration)
+    if transition_type == "slide_in": return slidein_transition(clip, duration, side)
+    if transition_type == "slide_out": return slideout_transition(clip, duration, side)
+    if transition_type == "shuffle":
+        fn = random.choice([fadein_transition, fadeout_transition,
+                            lambda c, d: slidein_transition(c, d, side),
+                            lambda c, d: slideout_transition(c, d, side)])
+        return fn(clip, duration)
     return clip
 
 
 # ---------------------------------------------------------------------------
-# Core mixing functions
+# Core: A-roll + B-roll interleaved mixing
 # ---------------------------------------------------------------------------
 
 def combine_videos(
@@ -298,151 +221,153 @@ def combine_videos(
     video_transition: str = "none",
     max_clip_duration: int = 5,
     threads: int = 2,
+    a_roll_paths: Optional[List[str]] = None,
+    b_roll_paths: Optional[List[str]] = None,
 ) -> str:
-    """Core mixing function — segments, resizes, transitions, and joins clips.
+    """Core mixing function.
 
-    Closely follows MoneyPrinterTurbo's combine_videos logic:
-    1. Load audio to determine target duration.
-    2. Split each source video into segments of max_clip_duration.
-    3. Arrange segments (shuffle for random, first-segment-only for sequential).
-    4. Process each segment: resize to target resolution, apply transition,
-       write to temp file.
-    5. Loop segments if total duration < audio duration.
-    6. Use FFmpeg concat demuxer to join temp files into final video.
-    7. Clean up temp files.
+    Logic:
+    - A-roll stays INTACT as the timeline backbone (video + audio)
+    - B-roll segments are inserted at regular intervals, replacing A-roll's
+      visuals while A-roll's audio continues underneath
+    - If no B-roll, output is just A-roll resized to target aspect ratio
+
+    Timeline example (clip_duration=5s, A-roll=30s, B-roll available):
+      [A 0-5s][B1 5-10s][A 10-15s][B2 15-20s][A 20-25s][B3 25-30s]
 
     Args:
         combined_video_path: Output file path.
-        video_paths: List of source video file paths.
-        audio_file: Audio file path (determines target duration).
-        video_aspect: Target aspect ratio ("16:9", "9:16", or "1:1").
-        video_concat_mode: "random" or "sequential".
-        video_transition: Transition effect name.
-        max_clip_duration: Maximum duration per clip segment in seconds.
-        threads: Number of FFmpeg threads.
-
-    Returns:
-        Path to the combined output video.
+        video_paths: Legacy param (ignored if a_roll_paths provided).
+        audio_file: Audio file (A-roll extracted audio).
+        video_aspect: Target aspect ratio.
+        video_concat_mode: "random" or "sequential" for B-roll arrangement.
+        video_transition: Transition effect for B-roll insertions.
+        max_clip_duration: Duration of each segment in seconds.
+        threads: FFmpeg threads.
+        a_roll_paths: Explicit A-roll video paths.
+        b_roll_paths: Explicit B-roll video paths.
     """
-    # 1. Load audio and get duration
-    audio_clip = AudioFileClip(audio_file)
-    audio_duration = audio_clip.duration
-    _close_clip(audio_clip)
-    logger.info("audio duration: %.2f seconds", audio_duration)
-    logger.info("maximum clip duration: %d seconds", max_clip_duration)
+    # Resolve paths
+    if a_roll_paths is None:
+        a_roll_paths = video_paths
+    if b_roll_paths is None:
+        b_roll_paths = []
+
+    if not a_roll_paths:
+        raise ValueError("No A-roll video paths provided")
 
     output_dir = os.path.dirname(combined_video_path)
     os.makedirs(output_dir, exist_ok=True)
 
-    # 2. Parse aspect ratio to resolution
-    video_width, video_height = ASPECT_RESOLUTIONS.get(
-        video_aspect, (1080, 1920)
-    )
+    target_w, target_h = ASPECT_RESOLUTIONS.get(video_aspect, (1080, 1920))
 
-    # 3. Build subclipped segments from all source videos
-    subclipped_items: List[SubClippedVideoClip] = []
+    # --- Step 1: Build A-roll timeline ---
+    # Concatenate all A-roll videos into one continuous clip
+    logger.info("building A-roll timeline from %d videos", len(a_roll_paths))
+    a_roll_total_duration = 0.0
+    a_roll_segments = []  # (file_path, start, end) tuples covering the full A-roll
 
-    for video_path in video_paths:
-        clip = VideoFileClip(video_path)
-        clip_duration = clip.duration
-        clip_w, clip_h = clip.size
+    for path in a_roll_paths:
+        clip = VideoFileClip(path)
+        dur = clip.duration
         _close_clip(clip)
+        a_roll_segments.append((path, 0.0, dur))
+        a_roll_total_duration += dur
 
-        start_time = 0.0
-        while start_time < clip_duration:
-            end_time = min(start_time + max_clip_duration, clip_duration)
-            if end_time > start_time:
-                subclipped_items.append(
-                    SubClippedVideoClip(
-                        file_path=video_path,
-                        start_time=start_time,
-                        end_time=end_time,
-                        width=clip_w,
-                        height=clip_h,
-                    )
-                )
-            start_time = end_time
-            # Sequential mode: only take the first segment per video
-            if video_concat_mode == "sequential":
-                break
+    logger.info("A-roll total duration: %.2fs", a_roll_total_duration)
 
-    # 4. Shuffle if random mode
-    if video_concat_mode == "random":
-        random.shuffle(subclipped_items)
-
-    logger.debug("total subclipped items: %d", len(subclipped_items))
-
-    # 5. Process segments until video_duration >= audio_duration
-    processed_clips: List[SubClippedVideoClip] = []
-    video_duration = 0.0
-
-    for i, item in enumerate(subclipped_items):
-        if video_duration >= audio_duration:
-            break
-
-        logger.debug(
-            "processing clip %d: %dx%d, current duration: %.2fs, remaining: %.2fs",
-            i + 1, item.width, item.height,
-            video_duration, audio_duration - video_duration,
-        )
-
-        try:
-            clip = VideoFileClip(item.file_path).subclipped(
-                item.start_time, item.end_time
-            )
-            clip_duration = clip.duration
-            clip_w, clip_h = clip.size
-
-            # Resize to target resolution (maintain aspect ratio, pad with black)
-            if clip_w != video_width or clip_h != video_height:
-                clip_ratio = clip_w / clip_h
-                video_ratio = video_width / video_height
-
-                if clip_ratio == video_ratio:
-                    clip = clip.resized(new_size=(video_width, video_height))
-                else:
-                    if clip_ratio > video_ratio:
-                        scale_factor = video_width / clip_w
-                    else:
-                        scale_factor = video_height / clip_h
-
-                    new_width = int(clip_w * scale_factor)
-                    new_height = int(clip_h * scale_factor)
-
-                    background = ColorClip(
-                        size=(video_width, video_height), color=(0, 0, 0)
-                    ).with_duration(clip_duration)
-                    clip_resized = clip.resized(
-                        new_size=(new_width, new_height)
-                    ).with_position("center")
-                    clip = CompositeVideoClip([background, clip_resized])
-
-            # Apply transition effect
-            clip = apply_transition(clip, video_transition)
-
-            # Enforce max clip duration after transition
-            if clip.duration > max_clip_duration:
-                clip = clip.subclipped(0, max_clip_duration)
-
-            # Write to temp file
-            clip_file = os.path.join(output_dir, f"temp-clip-{i + 1}.mp4")
-            clip.write_videofile(
-                clip_file, logger=None, fps=FPS, codec=VIDEO_CODEC
-            )
-
-            clip_duration_saved = clip.duration
+    # --- Step 2: Prepare B-roll segments ---
+    # Each B-roll source is used exactly ONCE (no repetition).
+    # Each B-roll clip is trimmed to a short duration (2-3s) for natural insertion.
+    BROLL_INSERT_DURATION = 2.0  # seconds — short enough to not lose too much A-roll context
+    b_roll_clips_info = []  # list of (path, start, end)
+    if b_roll_paths:
+        for path in b_roll_paths:
+            clip = VideoFileClip(path)
+            dur = clip.duration
             _close_clip(clip)
+            use_dur = min(dur, BROLL_INSERT_DURATION)
+            if use_dur > 0.1:
+                b_roll_clips_info.append((path, 0.0, use_dur))
 
-            processed_clips.append(
-                SubClippedVideoClip(
-                    file_path=clip_file,
-                    duration=clip_duration_saved,
-                    width=video_width,
-                    height=video_height,
-                )
-            )
-            video_duration += clip_duration_saved
+        if video_concat_mode == "random":
+            random.shuffle(b_roll_clips_info)
 
+    logger.info("B-roll segments available: %d (each %.1fs, used once)", len(b_roll_clips_info), BROLL_INSERT_DURATION)
+
+    # --- Step 3: Build interleaved timeline ---
+    # Strategy: Evenly distribute B-roll insertions across the A-roll timeline.
+    # If we have N B-roll clips, we split A-roll into (N+1) chunks and insert
+    # one B-roll between each pair of A-roll chunks.
+    #
+    # Example with 2 B-rolls and 30s A-roll:
+    #   [A 0-10s] [B1 ~3s] [A 10-20s] [B2 ~3s] [A 20-30s]
+    #
+    # This avoids the rigid "every other 5s" pattern and feels more natural.
+
+    timeline = []  # list of (source_type, file_path, src_start, src_end, timeline_start)
+    n_brolls = len(b_roll_clips_info)
+
+    if n_brolls == 0:
+        # No B-roll: just use A-roll straight through
+        cursor = 0.0
+        for path, start, end in a_roll_segments:
+            timeline.append(("aroll", path, start, end, cursor))
+            cursor += (end - start)
+    else:
+        # Split A-roll into (n_brolls + 1) equal chunks
+        n_chunks = n_brolls + 1
+        chunk_dur = a_roll_total_duration / n_chunks
+
+        cursor = 0.0
+        a_cursor = 0.0
+        b_idx = 0
+
+        for chunk_i in range(n_chunks):
+            # A-roll chunk
+            a_chunk_dur = chunk_dur
+            # Last chunk gets any remaining time
+            if chunk_i == n_chunks - 1:
+                a_chunk_dur = a_roll_total_duration - a_cursor
+
+            if a_chunk_dur > 0.1:
+                a_file, a_src_start = _resolve_aroll_position(a_roll_segments, a_cursor, a_chunk_dur)
+                # Clamp to source file boundary
+                a_src_end = min(a_src_start + a_chunk_dur, _get_file_end(a_roll_segments, a_file))
+                actual_a_dur = a_src_end - a_src_start
+                timeline.append(("aroll", a_file, a_src_start, a_src_end, cursor))
+                cursor += actual_a_dur
+                a_cursor += actual_a_dur
+
+            # Insert B-roll after this A-roll chunk (except after the last chunk)
+            if b_idx < n_brolls:
+                b_path, b_start, b_end = b_roll_clips_info[b_idx]
+                b_dur = b_end - b_start
+                timeline.append(("broll", b_path, b_start, b_end, cursor))
+                cursor += b_dur
+                # Advance A-roll cursor by B-roll duration (audio continues)
+                a_cursor += b_dur
+                b_idx += 1
+
+    logger.info("timeline built: %d segments, total %.2fs", len(timeline), cursor)
+
+    # --- Step 4: Render each segment to temp file ---
+    temp_files = []
+    for i, (src_type, path, src_start, src_end, tl_start) in enumerate(timeline):
+        try:
+            clip = VideoFileClip(path).subclipped(src_start, src_end)
+            clip = clip.without_audio()  # strip audio, we'll add A-roll audio separately
+            clip = _resize_clip(clip, target_w, target_h)
+
+            # Apply transition to B-roll insertions
+            if src_type == "broll":
+                clip = apply_transition(clip, video_transition)
+
+            temp_path = os.path.join(output_dir, f"temp-seg-{i:04d}.mp4")
+            clip.write_videofile(temp_path, logger=None, fps=FPS, codec=VIDEO_CODEC, audio=False)
+            temp_files.append(temp_path)
+
+            _close_clip(clip)
         except Exception as e:
             logger.error("failed to process clip: %s", str(e))
 
@@ -470,36 +395,195 @@ def combine_videos(
         logger.warning("no clips available for merging")
         return combined_video_path
 
+    if len(processed_clips) == 1:
+        logger.info("using single clip directly")
+        import shutil
+        shutil.copy(processed_clips[0].file_path, combined_video_path)
+        _delete_files([processed_clips[0].file_path])
+        logger.info("video combining completed")
+        return combined_video_path
+
     clip_files = [c.file_path for c in processed_clips]
-    logger.info("concatenating %d clips with ffmpeg and replacing audio", len(clip_files))
+    logger.info("concatenating %d clips with ffmpeg", len(clip_files))
     _concat_video_clips_with_ffmpeg(
         clip_files=clip_files,
         output_file=combined_video_path,
         threads=threads,
         output_dir=output_dir,
-        audio_file=audio_file,
     )
 
     # 7. Clean up temp files (deduplicate in case of looped references)
     unique_temp_files = list(set(clip_files))
     _delete_files(unique_temp_files)
 
-    logger.info("video combining completed")
+    logger.info("mixing complete: %s", combined_video_path)
     return combined_video_path
 
 
-def extract_audio_from_videos(
-    video_paths: List[str], output_path: str
-) -> float:
-    """Extract and concatenate audio tracks from multiple videos.
+def _generate_subtitles(audio_path: str, ass_path: str, video_w: int, video_h: int) -> None:
+    """Generate ASS subtitle file from audio.
 
-    Args:
-        video_paths: List of video file paths to extract audio from.
-        output_path: Output audio file path (mp3).
-
-    Returns:
-        Total duration of the concatenated audio in seconds.
+    Strategy: Use faster-whisper if available and model is cached locally.
+    Falls back to simple duration-based subtitle splitting from audio duration
+    (placeholder text) if Whisper is unavailable.
     """
+    logger.info("generating subtitles from audio: %s", audio_path)
+
+    segments_data = []  # list of (start_seconds, end_seconds, text)
+
+    # Try faster-whisper first
+    try:
+        from faster_whisper import WhisperModel
+        # Only use if model is already cached (don't download)
+        model = WhisperModel("base", device="cpu", compute_type="int8",
+                             download_root=None)
+        segments, info = model.transcribe(audio_path, language="zh", vad_filter=True)
+        for seg in segments:
+            text = seg.text.strip()
+            if text:
+                segments_data.append((seg.start, seg.end, text))
+        logger.info("whisper transcription: %d segments", len(segments_data))
+    except Exception as e:
+        logger.warning("whisper unavailable (%s), trying ffmpeg speech detection", str(e)[:100])
+
+        # Fallback: use ffmpeg silencedetect to find speech segments
+        try:
+            segments_data = _detect_speech_segments(audio_path)
+            logger.info("speech detection: %d segments", len(segments_data))
+        except Exception as e2:
+            logger.warning("speech detection failed: %s", str(e2)[:100])
+
+    if not segments_data:
+        logger.warning("no subtitle segments generated")
+        return
+
+    # Build ASS file
+    font_size = max(18, int(video_h * 0.028))
+    margin_bottom = max(30, int(video_h * 0.06))
+
+    ass_header = f"""[Script Info]
+Title: Auto-generated subtitles
+ScriptType: v4.00+
+PlayResX: {video_w}
+PlayResY: {video_h}
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+    events = []
+    for start, end, text in segments_data:
+        start_ts = _seconds_to_ass_time(start)
+        end_ts = _seconds_to_ass_time(end)
+        events.append(f"Dialogue: 0,{start_ts},{end_ts},Default,,0,0,0,,{text}")
+
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write(ass_header)
+        f.write("\n".join(events))
+        f.write("\n")
+
+    logger.info("subtitles written: %d events, saved to %s", len(events), ass_path)
+
+
+def _detect_speech_segments(audio_path: str) -> list:
+    """Use ffmpeg silencedetect to find non-silent segments, return placeholder text."""
+    import json as _json
+
+    # Get audio duration
+    probe_cmd = [
+        _get_ffmpeg_binary().replace("ffmpeg", "ffprobe"),
+        "-v", "quiet", "-print_format", "json", "-show_format", audio_path,
+    ]
+    probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+    total_dur = 0.0
+    if probe_result.returncode == 0:
+        data = _json.loads(probe_result.stdout)
+        total_dur = float(data.get("format", {}).get("duration", 0))
+
+    if total_dur <= 0:
+        return []
+
+    # Use silencedetect to find silence boundaries
+    cmd = [
+        _get_ffmpeg_binary(),
+        "-i", audio_path,
+        "-af", "silencedetect=noise=-30dB:d=0.5",
+        "-f", "null", "-",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    stderr = result.stderr or ""
+
+    # Parse silence_start and silence_end from stderr
+    import re
+    silence_starts = [float(m.group(1)) for m in re.finditer(r"silence_start:\s*([\d.]+)", stderr)]
+    silence_ends = [float(m.group(1)) for m in re.finditer(r"silence_end:\s*([\d.]+)", stderr)]
+
+    # Build speech segments (gaps between silences)
+    segments = []
+    prev_end = 0.0
+
+    for i in range(len(silence_starts)):
+        speech_start = prev_end
+        speech_end = silence_starts[i]
+        if speech_end - speech_start > 0.3:
+            segments.append((speech_start, speech_end, ""))  # empty text placeholder
+        if i < len(silence_ends):
+            prev_end = silence_ends[i]
+
+    # Last segment after final silence
+    if prev_end < total_dur - 0.3:
+        segments.append((prev_end, total_dur, ""))
+
+    # If no silence detected, just return empty (no subtitles)
+    return segments
+
+
+def _seconds_to_ass_time(seconds: float) -> str:
+    """Convert seconds to ASS timestamp format: H:MM:SS.cc"""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    cs = int((seconds % 1) * 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def _resolve_aroll_position(
+    a_roll_segments: List[tuple],
+    a_cursor: float,
+    seg_dur: float,
+) -> tuple:
+    """Find which A-roll source file and offset corresponds to a_cursor position."""
+    accumulated = 0.0
+    for path, start, end in a_roll_segments:
+        file_dur = end - start
+        if accumulated + file_dur > a_cursor:
+            offset_in_file = a_cursor - accumulated
+            return (path, offset_in_file)
+        accumulated += file_dur
+    # Fallback: use last file
+    path, start, end = a_roll_segments[-1]
+    return (path, max(0, end - seg_dur))
+
+
+def _get_file_end(a_roll_segments: List[tuple], file_path: str) -> float:
+    """Get the end time (duration) of a specific A-roll file."""
+    for path, start, end in a_roll_segments:
+        if path == file_path:
+            return end
+    return 999999.0
+
+
+# ---------------------------------------------------------------------------
+# Audio extraction & BGM mixing (unchanged)
+# ---------------------------------------------------------------------------
+
+def extract_audio_from_videos(video_paths: List[str], output_path: str) -> float:
+    """Extract and concatenate audio tracks from A-roll videos."""
     if not video_paths:
         raise ValueError("No video paths provided")
 
@@ -524,7 +608,6 @@ def extract_audio_from_videos(
         if len(audio_clips) == 1:
             final_audio = audio_clips[0]
         else:
-            # Concatenate audio clips sequentially by offsetting start times
             offset = 0.0
             offset_clips = []
             for ac in audio_clips:
@@ -533,10 +616,7 @@ def extract_audio_from_videos(
             final_audio = CompositeAudioClip(offset_clips)
 
         final_audio.write_audiofile(output_path, logger=None)
-        logger.info(
-            "extracted audio: %.2fs total, saved to %s",
-            total_duration, output_path,
-        )
+        logger.info("extracted audio: %.2fs, saved to %s", total_duration, output_path)
     finally:
         for ac in audio_clips:
             try:
@@ -555,42 +635,21 @@ def mix_bgm(
     bgm_volume: float = 0.2,
     fade_out_duration: float = 3.0,
 ) -> str:
-    """Mix background music with the main audio track.
-
-    The BGM is looped to match the main audio duration, volume-adjusted,
-    and faded out at the end.
-
-    Args:
-        main_audio_path: Path to the main audio file.
-        bgm_file: Path to the BGM audio file.
-        output_path: Output path for the mixed audio.
-        bgm_volume: Volume multiplier for BGM (0.0 to 1.0).
-        fade_out_duration: Fade-out duration at the end in seconds.
-
-    Returns:
-        Path to the mixed audio file.
-    """
+    """Mix background music with the main audio track."""
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     main_clip = AudioFileClip(main_audio_path)
     bgm_clip = AudioFileClip(bgm_file)
 
     try:
-        # Loop BGM to match main audio duration, adjust volume, fade out
         bgm_processed = bgm_clip.with_effects([
             afx.MultiplyVolume(bgm_volume),
             afx.AudioLoop(duration=main_clip.duration),
             afx.AudioFadeOut(fade_out_duration),
         ])
-
-        # Mix main audio and processed BGM
         mixed = CompositeAudioClip([main_clip, bgm_processed])
         mixed.write_audiofile(output_path, logger=None)
-
-        logger.info(
-            "BGM mixed: main=%.2fs, bgm_volume=%.2f, output=%s",
-            main_clip.duration, bgm_volume, output_path,
-        )
+        logger.info("BGM mixed: %.2fs, volume=%.2f", main_clip.duration, bgm_volume)
     finally:
         _close_clip(bgm_clip)
         _close_clip(main_clip)

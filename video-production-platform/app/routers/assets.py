@@ -14,7 +14,6 @@ from app.services.asset_service import (
     VALID_CATEGORIES,
     generate_thumbnail,
     validate_file_format,
-    validate_file_size,
 )
 from app.utils.auth import require_role
 from app.utils.errors import NotFoundError, ValidationError
@@ -46,23 +45,42 @@ async def upload_asset(
     original_filename = file.filename or "unknown"
     ext, media_type = validate_file_format(original_filename)
 
-    # Read file content to get size
-    content = await file.read()
-    file_size = len(content)
-
-    # Validate file size
-    validate_file_size(file_size, db)
-
     # Generate asset ID and create storage directory
     asset_id = generate_uuid()
     asset_dir = os.path.join(STORAGE_BASE, asset_id)
     os.makedirs(asset_dir, exist_ok=True)
 
-    # Save original file
+    # Save file using streaming write to avoid loading entire file into memory
     stored_filename = f"original.{ext}"
     file_path = os.path.join(asset_dir, stored_filename)
-    with open(file_path, "wb") as f:
-        f.write(content)
+
+    # Determine max allowed size for streaming validation
+    from app.services.config_service import ConfigService
+    config_service = ConfigService.get_instance()
+    max_size_str = config_service.get_config(
+        "upload_max_size", db, str(500 * 1024 * 1024)
+    )
+    max_size = int(max_size_str)
+
+    try:
+        file_size = 0
+        await file.seek(0)
+        with open(file_path, "wb") as f:
+            while chunk := await file.read(1024 * 1024):  # 1 MB chunks
+                file_size += len(chunk)
+                if file_size > max_size:
+                    f.close()
+                    os.remove(file_path)
+                    max_mb = max_size / (1024 * 1024)
+                    raise ValidationError(
+                        message=f"File too large (>{max_mb:.0f}MB). Upload aborted.",
+                    )
+                f.write(chunk)
+    except ValidationError:
+        # Clean up the asset directory on size validation failure
+        if os.path.exists(asset_dir):
+            shutil.rmtree(asset_dir)
+        raise
 
     # Generate thumbnail (non-blocking, skip if fails)
     thumbnail_path = generate_thumbnail(file_path, asset_dir, media_type)

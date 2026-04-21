@@ -411,7 +411,8 @@
                 <!-- AI Keyword Generation -->
                 <div class="mb-4">
                     <div class="flex items-center space-x-2 mb-2">
-                        <input type="text" x-model="pexelsTopic" placeholder="输入视频主题，AI 生成搜索关键词..."
+                        <label for="mix-pexels-topic" class="sr-only">视频主题</label>
+                        <input id="mix-pexels-topic" type="text" x-model="pexelsTopic" placeholder="输入视频主题，AI 生成搜索关键词..."
                                class="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300">
                         <button @click="generateKeywords()" :disabled="!pexelsTopic.trim() || generatingKeywords"
                                 class="px-4 py-2 btn-gradient text-white text-sm font-medium rounded-xl cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 whitespace-nowrap">
@@ -433,7 +434,8 @@
 
                 <!-- Manual Search -->
                 <div class="flex items-center space-x-2 mb-4">
-                    <input type="text" x-model="pexelsSearch" placeholder="输入英文关键词搜索..."
+                    <label for="mix-pexels-search" class="sr-only">Pexels 关键词搜索</label>
+                    <input id="mix-pexels-search" type="text" x-model="pexelsSearch" placeholder="输入英文关键词搜索..."
                            @keyup.enter="searchPexels()"
                            class="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300">
                     <button @click="searchPexels()" :disabled="!pexelsSearch.trim() || searchingPexels"
@@ -512,8 +514,8 @@
 
                         <!-- Transition -->
                         <div>
-                            <label class="text-xs font-medium text-slate-600 mb-2 block">转场效果</label>
-                            <select x-model="params.transition"
+                            <label for="mix-transition" class="text-xs font-medium text-slate-600 mb-2 block">转场效果</label>
+                            <select id="mix-transition" x-model="params.transition"
                                     class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300 appearance-none cursor-pointer">
                                 <option value="none">无转场</option>
                                 <option value="fade_in">淡入</option>
@@ -527,10 +529,10 @@
                         <!-- Clip Duration Slider -->
                         <div>
                             <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs font-medium text-slate-600">片段时长</label>
+                                <label for="mix-clip-duration" class="text-xs font-medium text-slate-600">片段时长</label>
                                 <span class="text-sm font-bold text-violet-600" x-text="params.clip_duration + ' 秒'"></span>
                             </div>
-                            <input type="range" x-model.number="params.clip_duration" min="2" max="15" step="1"
+                            <input id="mix-clip-duration" type="range" x-model.number="params.clip_duration" min="2" max="15" step="1"
                                    class="w-full cursor-pointer">
                             <div class="flex justify-between text-xs text-slate-400 mt-1">
                                 <span>2s</span>
@@ -540,25 +542,26 @@
 
                         <!-- Concat Mode -->
                         <div>
-                            <label class="text-xs font-medium text-slate-600 mb-2 block">拼接模式</label>
+                            <label id="concat-mode-label" class="text-xs font-medium text-slate-600 mb-2 block">B-Roll 插入顺序</label>
                             <div class="flex space-x-3">
                                 <button @click="params.concat_mode = 'random'"
                                         class="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-300"
                                         :class="params.concat_mode === 'random' ? 'btn-gradient text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
-                                    🎲 随机打乱
+                                    🎲 随机插入
                                 </button>
                                 <button @click="params.concat_mode = 'sequential'"
                                         class="flex-1 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all duration-300"
                                         :class="params.concat_mode === 'sequential' ? 'btn-gradient text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'">
-                                    📋 顺序排列
+                                    📋 按选择顺序
                                 </button>
                             </div>
+                            <p class="text-xs text-slate-400 mt-1.5">A-Roll 始终保持原始顺序，此选项仅影响 B-Roll 片段的插入顺序</p>
                         </div>
 
                         <!-- Video Count -->
                         <div>
                             <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs font-medium text-slate-600">输出数量</label>
+                                <label for="mix-video-count" class="text-xs font-medium text-slate-600">输出数量</label>
                                 <span class="text-sm font-bold text-violet-600" x-text="params.video_count + ' 个版本'"></span>
                             </div>
                             <div class="flex items-center space-x-3">
@@ -566,7 +569,7 @@
                                         class="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer hover:bg-slate-200 transition-colors">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"/></svg>
                                 </button>
-                                <input type="number" x-model.number="params.video_count" min="1" max="5"
+                                <input id="mix-video-count" type="number" x-model.number="params.video_count" min="1" max="5"
                                        class="w-16 text-center py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300">
                                 <button @click="params.video_count = Math.min(5, params.video_count + 1)"
                                         class="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center cursor-pointer hover:bg-slate-200 transition-colors">
@@ -596,13 +599,13 @@
                     </div>
                     <div x-show="params.tts_enabled" x-transition class="mt-5 space-y-4">
                         <div>
-                            <label class="text-xs font-medium text-slate-600 mb-1.5 block">配音文本</label>
-                            <textarea x-model="params.tts_text" rows="4" placeholder="输入需要合成语音的文本..."
+                            <label for="mix-tts-text" class="text-xs font-medium text-slate-600 mb-1.5 block">配音文本</label>
+                            <textarea id="mix-tts-text" x-model="params.tts_text" rows="4" placeholder="输入需要合成语音的文本..."
                                       class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300 resize-none"></textarea>
                         </div>
                         <div>
-                            <label class="text-xs font-medium text-slate-600 mb-1.5 block">语音角色</label>
-                            <select x-model="params.tts_voice"
+                            <label for="mix-tts-voice" class="text-xs font-medium text-slate-600 mb-1.5 block">语音角色</label>
+                            <select id="mix-tts-voice" x-model="params.tts_voice"
                                     class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300 appearance-none cursor-pointer">
                                 <option value="">请选择语音</option>
                                 <option value="zh-CN-XiaoxiaoNeural">晓晓（女声）</option>
@@ -633,8 +636,8 @@
                     </div>
                     <div x-show="params.bgm_enabled" x-transition class="mt-5 space-y-4">
                         <div>
-                            <label class="text-xs font-medium text-slate-600 mb-1.5 block">BGM 来源</label>
-                            <select x-model="params.bgm_asset_id"
+                            <label for="mix-bgm-source" class="text-xs font-medium text-slate-600 mb-1.5 block">BGM 来源</label>
+                            <select id="mix-bgm-source" x-model="params.bgm_asset_id"
                                     class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300 appearance-none cursor-pointer">
                                 <option :value="null">🎲 随机 BGM</option>
                                 <template x-for="bgm in bgmAssets" :key="bgm.id">
@@ -644,10 +647,10 @@
                         </div>
                         <div>
                             <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs font-medium text-slate-600">音量</label>
+                                <label for="mix-bgm-volume" class="text-xs font-medium text-slate-600">音量</label>
                                 <span class="text-sm font-bold text-violet-600" x-text="Math.round(params.bgm_volume * 100) + '%'"></span>
                             </div>
-                            <input type="range" x-model.number="params.bgm_volume" min="0" max="1" step="0.05"
+                            <input id="mix-bgm-volume" type="range" x-model.number="params.bgm_volume" min="0" max="1" step="0.05"
                                    class="w-full cursor-pointer">
                             <div class="flex justify-between text-xs text-slate-400 mt-1">
                                 <span>0%</span>
@@ -691,8 +694,8 @@
                             <p class="text-sm font-semibold text-slate-700" x-text="params.clip_duration + ' 秒'"></p>
                         </div>
                         <div class="bg-slate-50 rounded-xl p-4">
-                            <p class="text-xs text-slate-400 mb-1">拼接模式</p>
-                            <p class="text-sm font-semibold text-slate-700" x-text="params.concat_mode === 'random' ? '随机打乱' : '顺序排列'"></p>
+                            <p class="text-xs text-slate-400 mb-1">B-Roll 插入</p>
+                            <p class="text-sm font-semibold text-slate-700" x-text="params.concat_mode === 'random' ? '随机插入' : '按选择顺序'"></p>
                         </div>
                         <div class="bg-slate-50 rounded-xl p-4">
                             <p class="text-xs text-slate-400 mb-1">输出数量</p>
