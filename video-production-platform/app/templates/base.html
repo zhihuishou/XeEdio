@@ -385,16 +385,23 @@
                     return { admin: '管理员', operator: '运营', intern: '实习生' }[role] || role;
                 },
                 showToast(message, type = 'success', duration = 5000) {
-                    const toast = { message, type, visible: true };
+                    const id = Date.now() + Math.random();
+                    const toast = { id, message, type, visible: true };
                     this.toasts.push(toast);
                     setTimeout(() => {
-                        toast.visible = false;
-                        setTimeout(() => { this.toasts = this.toasts.filter(t => t !== toast); }, 400);
+                        const t = this.toasts.find(x => x.id === id);
+                        if (t) {
+                            t.visible = false;
+                            setTimeout(() => { this.toasts = this.toasts.filter(x => x.id !== id); }, 500);
+                        }
                     }, duration);
                 },
-                removeToast(i) {
-                    this.toasts[i].visible = false;
-                    setTimeout(() => this.toasts.splice(i, 1), 200);
+                removeToast(index) {
+                    const toast = this.toasts[index];
+                    if (toast) {
+                        toast.visible = false;
+                        setTimeout(() => { this.toasts = this.toasts.filter(x => x.id !== toast.id); }, 500);
+                    }
                 },
                 logout() { removeToken(); window.location.href = '/login'; },
                 init() {
