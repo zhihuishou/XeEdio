@@ -37,6 +37,7 @@ class MixCreateRequest(BaseModel):
     bgm_enabled: bool = Field(default=False, description="是否启用背景音乐")
     bgm_asset_id: Optional[str] = Field(default=None, description="BGM 素材 ID（None 表示随机）")
     bgm_volume: float = Field(default=0.2, ge=0.0, le=1.0, description="BGM 音量比例")
+    subtitle_enabled: bool = Field(default=False, description="是否开启字幕（需先启用 TTS）")
 
 
 class MixCreateResponse(BaseModel):
