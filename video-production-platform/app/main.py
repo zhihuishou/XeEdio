@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.models.init_db import init_db
-from app.routers import assets, auth, batches, composition, config, copywriting, forbidden_words, pages, reviews, tasks, tts, users
+from app.routers import assets, auth, batches, config, copywriting, forbidden_words, mix, pages, reviews, tasks, tts, users
 from app.utils.errors import register_exception_handlers
 from app.utils.logging import RequestIdMiddleware, setup_logging
 
@@ -45,6 +45,7 @@ app.add_middleware(
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/storage", StaticFiles(directory="storage"), name="storage")
 
 # Templates
 templates = Jinja2Templates(directory="app/templates")
@@ -65,7 +66,7 @@ app.include_router(assets.router)
 app.include_router(forbidden_words.router)
 app.include_router(copywriting.router)
 app.include_router(tts.router)
-app.include_router(composition.router)
+app.include_router(mix.router)
 app.include_router(tasks.router)
 app.include_router(batches.router)
 app.include_router(reviews.router)

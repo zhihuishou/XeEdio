@@ -32,9 +32,9 @@ class ExternalConfig:
 
     @classmethod
     def get_instance(cls, config_path: Optional[str] = None) -> "ExternalConfig":
-        """Get singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls(config_path)
+        """Get singleton instance. Always reload from file to pick up changes."""
+        # Always reload to support config.yaml hot-reload
+        cls._instance = cls(config_path)
         return cls._instance
 
     @classmethod

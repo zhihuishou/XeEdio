@@ -36,6 +36,13 @@ PERMISSION_MATRIX: dict[str, set[str]] = {
     # Review operations
     "review_approve": {"operator", "admin"},
     "review_reject": {"operator", "admin"},
+    # Mixing operations
+    "create_mix": {"intern", "operator", "admin"},
+    "view_mix_status": {"intern", "operator", "admin"},
+    "submit_mix_review": {"intern", "operator", "admin"},
+    "retry_mix": {"intern", "operator", "admin"},
+    "search_pexels": {"intern", "operator", "admin"},
+    "generate_keywords": {"intern", "operator", "admin"},
     # Admin operations
     "manage_users": {"admin"},
     "manage_config": {"admin"},

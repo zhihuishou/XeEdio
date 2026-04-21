@@ -41,7 +41,7 @@
                 <button @click="filterCategory = 'pexels_broll'; loadAssets()"
                         :class="filterCategory === 'pexels_broll' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
                         class="px-3 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors duration-200">
-                    Pexels空镜
+                    素材空镜
                 </button>
             </div>
 
@@ -76,7 +76,7 @@
             <div class="bg-white rounded-lg shadow overflow-hidden group cursor-pointer hover:shadow-md transition-shadow duration-200">
                 <!-- Thumbnail -->
                 <div class="aspect-video bg-gray-200 relative overflow-hidden">
-                    <img :src="asset.thumbnail_path ? '/static/' + asset.thumbnail_path : '/static/placeholder.svg'"
+                    <img :src="asset.thumbnail_path ? '/' + asset.thumbnail_path : '/static/placeholder.svg'"
                          :alt="asset.original_filename"
                          class="w-full h-full object-cover"
                          @error="$event.target.src='/static/placeholder.svg'">
@@ -162,7 +162,7 @@
                         <option value="">请选择分类</option>
                         <option value="talent_speaking">达人口播</option>
                         <option value="product">产品素材</option>
-                        <option value="pexels_broll">Pexels空镜</option>
+                        <option value="pexels_broll">素材空镜</option>
                     </select>
                 </div>
 
@@ -292,7 +292,7 @@ function assetsPage() {
             const labels = {
                 'talent_speaking': '达人口播',
                 'product': '产品素材',
-                'pexels_broll': 'Pexels空镜'
+                'pexels_broll': '素材空镜'
             };
             return labels[category] || category;
         },
@@ -367,14 +367,14 @@ function assetsPage() {
             try {
                 await apiCall('DELETE', `/api/assets/${this.deleteTarget.id}`);
                 this.showDeleteModal = false;
+                this.deleting = false;
                 this.deleteTarget = null;
-                this.loadAssets();
+                await this.loadAssets();
                 document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '素材已删除', type: 'success' } }));
             } catch (e) {
+                this.deleting = false;
                 const msg = e.data?.error?.message || '删除失败';
                 document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: msg, type: 'error' } }));
-            } finally {
-                this.deleting = false;
             }
         }
     };

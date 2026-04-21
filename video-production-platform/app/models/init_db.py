@@ -1,9 +1,13 @@
 """Database initialization script.
 
 Creates all tables and seeds default data (admin user + system config).
+Handles schema migration for new columns on existing tables.
 """
 
+import logging
+
 from passlib.context import CryptContext
+from sqlalchemy import text
 
 from app.models.database import (
     Base,
@@ -14,6 +18,8 @@ from app.models.database import (
     generate_uuid,
     utcnow,
 )
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -87,6 +93,7 @@ def init_db():
 
     db = SessionLocal()
     try:
+        _migrate_task_table(db)
         _seed_admin_user(db)
         _seed_system_config(db)
         db.commit()
@@ -95,6 +102,28 @@ def init_db():
         raise
     finally:
         db.close()
+
+
+def _migrate_task_table(db):
+    """Add new columns to the tasks table if they don't already exist.
+
+    SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN,
+    so we catch the OperationalError when the column already exists.
+    """
+    new_columns = [
+        ("mix_params", "TEXT"),
+        ("video_paths", "TEXT"),
+        ("error_message", "TEXT"),
+    ]
+    for col_name, col_type in new_columns:
+        try:
+            db.execute(
+                text(f"ALTER TABLE tasks ADD COLUMN {col_name} {col_type}")
+            )
+            logger.info("Added column '%s' to tasks table.", col_name)
+        except Exception:
+            # Column already exists — safe to ignore
+            db.rollback()
 
 
 def _seed_admin_user(db):

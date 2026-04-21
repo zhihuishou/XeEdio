@@ -1,7 +1,7 @@
 """Page routes - serves HTML templates for the frontend."""
 
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 router = APIRouter(tags=["pages"])
@@ -10,8 +10,8 @@ templates = Jinja2Templates(directory="app/templates")
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    """Home page - redirect to tasks or login."""
-    return RedirectResponse(url="/tasks", status_code=302)
+    """Home page - AI 矩阵中枢."""
+    return templates.TemplateResponse("home.html", {"request": request})
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -48,6 +48,12 @@ async def batches_page(request: Request):
 async def reviews_page(request: Request):
     """Review page."""
     return templates.TemplateResponse("reviews.html", {"request": request})
+
+
+@router.get("/mix", response_class=HTMLResponse)
+async def mix_page(request: Request):
+    """Smart video mixing page."""
+    return templates.TemplateResponse("mix.html", {"request": request})
 
 
 @router.get("/admin/config", response_class=HTMLResponse)
