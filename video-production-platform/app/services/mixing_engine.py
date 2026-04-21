@@ -171,6 +171,26 @@ def _delete_files(files) -> None:
             logger.debug("failed to delete file %s: %s", file, str(e))
 
 
+def _resize_clip(clip, target_w: int, target_h: int):
+    """Resize clip to target resolution, maintaining aspect ratio with black padding."""
+    clip_w, clip_h = clip.size
+    if clip_w == target_w and clip_h == target_h:
+        return clip
+    clip_ratio = clip_w / clip_h
+    target_ratio = target_w / target_h
+    if abs(clip_ratio - target_ratio) < 0.01:
+        return clip.resized(new_size=(target_w, target_h))
+    if clip_ratio > target_ratio:
+        scale = target_w / clip_w
+    else:
+        scale = target_h / clip_h
+    new_w = int(clip_w * scale)
+    new_h = int(clip_h * scale)
+    bg = ColorClip(size=(target_w, target_h), color=(0, 0, 0)).with_duration(clip.duration)
+    resized = clip.resized(new_size=(new_w, new_h)).with_position("center")
+    return CompositeVideoClip([bg, resized])
+
+
 # ---------------------------------------------------------------------------
 # Transition effects (based on MoneyPrinterTurbo video_effects.py)
 # ---------------------------------------------------------------------------
@@ -486,6 +506,231 @@ def combine_videos(
 
     logger.info("video combining completed")
     return combined_video_path
+
+
+def _resolve_aroll_position(a_roll_segments, a_cursor, seg_dur):
+    """Find which A-roll source file and offset corresponds to a_cursor position."""
+    accumulated = 0.0
+    for path, start, end in a_roll_segments:
+        file_dur = end - start
+        if accumulated + file_dur > a_cursor:
+            offset_in_file = a_cursor - accumulated
+            return (path, offset_in_file)
+        accumulated += file_dur
+    # Fallback: use last file
+    path, start, end = a_roll_segments[-1]
+    return (path, max(0, end - seg_dur))
+
+
+def _get_file_end(a_roll_segments, file_path):
+    """Get the end time (duration) of a specific A-roll file."""
+    for path, start, end in a_roll_segments:
+        if path == file_path:
+            return end
+    return 999999.0
+
+
+def execute_timeline(
+    timeline: list,
+    a_roll_paths: List[str],
+    b_roll_paths: List[str],
+    audio_file: str,
+    output_path: str,
+    video_aspect: str = "9:16",
+    video_transition: str = "none",
+    threads: int = 2,
+) -> str:
+    """Execute a VLM-generated timeline to produce the final video.
+
+    Iterates over timeline entries, extracts A-roll/B-roll segments,
+    concatenates via FFmpeg, and merges with audio.
+    """
+    import itertools
+
+    output_dir = os.path.dirname(output_path)
+    os.makedirs(output_dir, exist_ok=True)
+    target_w, target_h = ASPECT_RESOLUTIONS.get(video_aspect, (1080, 1920))
+
+    # Build A-roll segments for position lookup
+    a_roll_segments = []
+    for path in a_roll_paths:
+        clip = VideoFileClip(path)
+        dur = clip.duration
+        _close_clip(clip)
+        a_roll_segments.append((path, 0.0, dur))
+
+    # B-roll cycle
+    b_cycle = itertools.cycle(b_roll_paths) if b_roll_paths else iter([])
+
+    temp_files = []
+    for i, entry in enumerate(timeline):
+        entry_type = entry.get("type", "a_roll")
+        start = float(entry.get("start", 0))
+        end = float(entry.get("end", start + 1))
+        seg_dur = end - start
+
+        if seg_dur <= 0.05:
+            continue
+
+        try:
+            if entry_type == "a_roll":
+                # Find the right A-roll file and offset for this time range
+                a_file, a_offset = _resolve_aroll_position(a_roll_segments, start, seg_dur)
+                a_clip = VideoFileClip(a_file)
+                actual_end = min(a_offset + seg_dur, a_clip.duration)
+                if actual_end <= a_offset:
+                    _close_clip(a_clip)
+                    logger.warning("timeline entry %d: A-roll offset %.2f beyond file duration %.2f, skipping", i, a_offset, a_clip.duration)
+                    continue
+                clip = a_clip.subclipped(a_offset, actual_end)
+            else:
+                b_path = next(b_cycle, None)
+                if not b_path:
+                    logger.warning("timeline entry %d: no B-roll available, skipping", i)
+                    continue
+                b_clip = VideoFileClip(b_path)
+                use_dur = min(seg_dur, b_clip.duration)
+                clip = b_clip.subclipped(0, use_dur)
+
+            clip = clip.without_audio()
+            clip = _resize_clip(clip, target_w, target_h)
+
+            if entry_type == "b_roll":
+                clip = apply_transition(clip, video_transition)
+
+            temp_path = os.path.join(output_dir, f"tl-seg-{i:04d}.mp4")
+            clip.write_videofile(temp_path, logger=None, fps=FPS, codec=VIDEO_CODEC, audio=False)
+            temp_files.append(temp_path)
+            _close_clip(clip)
+        except Exception as e:
+            logger.error("timeline segment %d (%s %.2f-%.2f) failed: %s", i, entry_type, start, end, str(e))
+
+    if not temp_files:
+        raise RuntimeError("No timeline segments rendered")
+
+    # Concat video segments
+    video_only = os.path.join(output_dir, "tl-video-only.mp4")
+    concat_list = os.path.join(output_dir, "tl-concat.txt")
+    with open(concat_list, "w") as f:
+        for tf in temp_files:
+            f.write(f"file '{os.path.abspath(tf)}'\n")
+
+    cmd = [_get_ffmpeg_binary(), "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+           "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p", "-an", video_only]
+    subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    # Merge with audio
+    cmd2 = [_get_ffmpeg_binary(), "-y", "-i", video_only, "-i", audio_file,
+            "-c:v", "copy", "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+            "-shortest", "-movflags", "+faststart", output_path]
+    subprocess.run(cmd2, capture_output=True, text=True, check=False)
+
+    _delete_files(temp_files + [video_only, concat_list])
+    logger.info("timeline execution complete: %s", output_path)
+    return output_path
+
+
+def _generate_subtitles(audio_path: str, ass_path: str, video_w: int, video_h: int) -> None:
+    """Generate ASS subtitles from audio using Whisper or silence detection fallback."""
+    import re as _re
+
+    logger.info("generating subtitles from audio: %s", audio_path)
+    segments_data = []
+
+    try:
+        from faster_whisper import WhisperModel
+        model = WhisperModel("base", device="cpu", compute_type="int8", download_root=None)
+        segments, info = model.transcribe(audio_path, language="zh", vad_filter=True)
+        for seg in segments:
+            text = seg.text.strip()
+            if text:
+                segments_data.append((seg.start, seg.end, text))
+    except Exception as e:
+        logger.warning("whisper unavailable: %s", str(e)[:100])
+
+    if not segments_data:
+        return
+
+    font_size = max(18, int(video_h * 0.028))
+    margin_bottom = max(30, int(video_h * 0.06))
+
+    header = f"""[Script Info]
+Title: Auto subtitles
+ScriptType: v4.00+
+PlayResX: {video_w}
+PlayResY: {video_h}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    events = []
+    for s, e, t in segments_data:
+        events.append(f"Dialogue: 0,{_seconds_to_ass_time(s)},{_seconds_to_ass_time(e)},Default,,0,0,0,,{t}")
+
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write(header + "\n".join(events) + "\n")
+
+
+def _seconds_to_ass_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    cs = int((seconds % 1) * 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+
+def generate_subtitles_from_script(script_text: str, audio_duration: float, ass_path: str, video_w: int, video_h: int) -> None:
+    """Generate ASS subtitles from script text."""
+    import re as _re
+
+    raw = _re.split(r'[。！？!?\n]+', script_text)
+    segments = [s.strip() for s in raw if s.strip()]
+    if not segments:
+        return
+
+    seg_dur = audio_duration / len(segments)
+    font_size = max(18, int(video_h * 0.028))
+    margin_bottom = max(30, int(video_h * 0.06))
+
+    header = f"""[Script Info]
+Title: Script subtitles
+ScriptType: v4.00+
+PlayResX: {video_w}
+PlayResY: {video_h}
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    events = []
+    for i, text in enumerate(segments):
+        s = i * seg_dur
+        e = (i + 1) * seg_dur
+        events.append(f"Dialogue: 0,{_seconds_to_ass_time(s)},{_seconds_to_ass_time(e)},Default,,0,0,0,,{text}")
+
+    os.makedirs(os.path.dirname(ass_path) or ".", exist_ok=True)
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write(header + "\n".join(events) + "\n")
+
+
+def burn_subtitles(video_path: str, ass_path: str, output_path: str) -> str:
+    """Burn ASS subtitles into video using FFmpeg."""
+    abs_ass = os.path.abspath(ass_path).replace("\\", "/").replace(":", "\\:")
+    cmd = [_get_ffmpeg_binary(), "-y", "-i", video_path,
+           "-vf", f"ass='{abs_ass}'",
+           "-c:v", "libx264", "-b:v", "8M", "-c:a", "copy",
+           "-movflags", "+faststart", output_path]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise RuntimeError(f"Subtitle burn failed: {(result.stderr or '')[:300]}")
+    return output_path
 
 
 def extract_audio_from_videos(
