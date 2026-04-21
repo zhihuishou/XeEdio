@@ -27,6 +27,8 @@ def create_task_endpoint(
 @router.get("", response_model=TaskListResponse)
 def list_tasks(
     status: Optional[str] = Query(None, description="Filter by task status"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -46,10 +48,24 @@ def list_tasks(
     if status:
         query = query.filter(Task.status == status)
 
-    query = query.order_by(Task.created_at.desc())
-    tasks = query.all()
+    # Get total count before pagination
+    total = query.count()
 
-    return TaskListResponse(tasks=tasks, total=len(tasks))
+    # Calculate pagination
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * page_size
+
+    query = query.order_by(Task.created_at.desc())
+    tasks = query.offset(offset).limit(page_size).all()
+
+    return TaskListResponse(
+        tasks=tasks,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+    )
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
