@@ -75,8 +75,9 @@ def _concat_video_clips_with_ffmpeg(
     output_file: str,
     threads: int,
     output_dir: str,
+    audio_file: str = None,
 ) -> None:
-    """Join processed clip files using FFmpeg concat demuxer.
+    """Join processed clip files using FFmpeg concat demuxer and mux speech audio.
 
     This avoids MoviePy's concatenate_videoclips which re-encodes everything,
     causing quality degradation and colour shifts.
@@ -93,11 +94,20 @@ def _concat_video_clips_with_ffmpeg(
         "-f", "concat",
         "-safe", "0",
         "-i", concat_list_file,
+    ]
+    
+    if audio_file and os.path.exists(audio_file):
+        command.extend(["-i", audio_file, "-map", "0:v:0", "-map", "1:a:0"])
+    
+    command.extend([
         "-c:v", VIDEO_CODEC,
+        "-c:a", AUDIO_CODEC,
+        "-b:a", AUDIO_BITRATE,
         "-threads", str(threads or 2),
         "-pix_fmt", "yuv420p",
+        "-shortest",
         output_file,
-    ]
+    ])
 
     try:
         result = subprocess.run(
@@ -460,21 +470,14 @@ def combine_videos(
         logger.warning("no clips available for merging")
         return combined_video_path
 
-    if len(processed_clips) == 1:
-        logger.info("using single clip directly")
-        import shutil
-        shutil.copy(processed_clips[0].file_path, combined_video_path)
-        _delete_files([processed_clips[0].file_path])
-        logger.info("video combining completed")
-        return combined_video_path
-
     clip_files = [c.file_path for c in processed_clips]
-    logger.info("concatenating %d clips with ffmpeg", len(clip_files))
+    logger.info("concatenating %d clips with ffmpeg and replacing audio", len(clip_files))
     _concat_video_clips_with_ffmpeg(
         clip_files=clip_files,
         output_file=combined_video_path,
         threads=threads,
         output_dir=output_dir,
+        audio_file=audio_file,
     )
 
     # 7. Clean up temp files (deduplicate in case of looped references)
