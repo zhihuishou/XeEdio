@@ -13,7 +13,7 @@ class MixCreateRequest(BaseModel):
     """Request body for creating a mix task."""
 
     topic: str = Field(..., min_length=1, max_length=200, description="视频主题")
-    a_roll_asset_ids: list[str] = Field(..., min_length=1, description="A-Roll 素材 ID 列表（至少一个）")
+    a_roll_asset_ids: list[str] = Field(default=[], description="A-Roll 素材 ID 列表")
     b_roll_asset_ids: list[str] = Field(default=[], description="B-Roll 素材 ID 列表（可选）")
     aspect_ratio: str = Field(
         default="9:16",
@@ -37,6 +37,11 @@ class MixCreateRequest(BaseModel):
     bgm_enabled: bool = Field(default=False, description="是否启用背景音乐")
     bgm_asset_id: Optional[str] = Field(default=None, description="BGM 素材 ID（None 表示随机）")
     bgm_volume: float = Field(default=0.2, ge=0.0, le=1.0, description="BGM 音量比例")
+    mixing_mode: str = Field(
+        default="pure_mix",
+        pattern=r"^(pure_mix|mix_with_script|broll_voiceover)$",
+        description="混剪模式：pure_mix | mix_with_script | broll_voiceover",
+    )
 
 
 class MixCreateResponse(BaseModel):
@@ -58,6 +63,7 @@ class MixStatusResponse(BaseModel):
     video_duration: Optional[float] = None
     video_file_size: Optional[int] = None
     error_message: Optional[str] = None
+    ai_director_used: Optional[bool] = None
 
 
 class SubmitReviewResponse(BaseModel):
