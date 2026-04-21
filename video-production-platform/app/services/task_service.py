@@ -7,13 +7,15 @@ from app.utils.errors import StateTransitionError
 
 # Valid state transitions: maps current state -> list of allowed next states
 VALID_TRANSITIONS: dict[str, list[str]] = {
-    "draft": ["copy_confirmed"],
-    "copy_confirmed": ["tts_done"],
+    "draft": ["copy_confirmed", "processing"],
+    "copy_confirmed": ["tts_done", "processing"],
     "tts_done": ["video_done"],
+    "processing": ["video_done", "failed"],
     "video_done": ["pending_review"],
     "pending_review": ["approved", "rejected"],
     "approved": ["published"],
-    "rejected": ["draft"],
+    "rejected": ["draft", "processing"],
+    "failed": ["processing"],
 }
 
 

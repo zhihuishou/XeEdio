@@ -138,14 +138,14 @@
                         <option value="">全部分类</option>
                         <option value="talent_speaking">达人口播</option>
                         <option value="product">产品素材</option>
-                        <option value="pexels_broll">Pexels空镜</option>
+                        <option value="pexels_broll">素材空镜</option>
                     </select>
                 </div>
                 <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto">
                     <template x-for="asset in aRollAssets" :key="asset.id">
                         <div @click="toggleAsset('a', asset)" class="relative aspect-video bg-gray-200 rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all duration-200"
                              :class="selectedARoll.includes(asset.id) ? 'ring-2 ring-blue-600' : ''">
-                            <img :src="asset.thumbnail_path ? '/static/' + asset.thumbnail_path : '/static/placeholder.svg'" class="w-full h-full object-cover">
+                            <img :src="asset.thumbnail_path ? '/' + asset.thumbnail_path : '/static/placeholder.svg'" class="w-full h-full object-cover">
                             <div x-show="selectedARoll.includes(asset.id)" class="absolute inset-0 bg-blue-600/30 flex items-center justify-center">
                                 <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                             </div>
@@ -163,14 +163,14 @@
                         <option value="">全部分类</option>
                         <option value="talent_speaking">达人口播</option>
                         <option value="product">产品素材</option>
-                        <option value="pexels_broll">Pexels空镜</option>
+                        <option value="pexels_broll">素材空镜</option>
                     </select>
                 </div>
                 <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-48 overflow-y-auto">
                     <template x-for="asset in bRollAssets" :key="asset.id">
                         <div @click="toggleAsset('b', asset)" class="relative aspect-video bg-gray-200 rounded overflow-hidden cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all duration-200"
                              :class="selectedBRoll.includes(asset.id) ? 'ring-2 ring-blue-600' : ''">
-                            <img :src="asset.thumbnail_path ? '/static/' + asset.thumbnail_path : '/static/placeholder.svg'" class="w-full h-full object-cover">
+                            <img :src="asset.thumbnail_path ? '/' + asset.thumbnail_path : '/static/placeholder.svg'" class="w-full h-full object-cover">
                             <div x-show="selectedBRoll.includes(asset.id)" class="absolute inset-0 bg-blue-600/30 flex items-center justify-center">
                                 <svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
                             </div>

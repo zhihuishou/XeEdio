@@ -84,6 +84,9 @@ class Task(Base):
     video_resolution = Column(String, nullable=True)
     video_duration = Column(Float, nullable=True)
     video_file_size = Column(Integer, nullable=True)
+    mix_params = Column(Text, nullable=True)  # JSON storage for mixing parameters
+    video_paths = Column(Text, nullable=True)  # JSON array of output video paths
+    error_message = Column(Text, nullable=True)  # Failure reason
     review_comment = Column(String, nullable=True)
     created_by = Column(String, ForeignKey("users.id"), nullable=False)
     reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)

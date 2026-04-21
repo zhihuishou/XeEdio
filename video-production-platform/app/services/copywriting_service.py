@@ -110,6 +110,7 @@ class CopywritingService:
             "messages": messages,
             "temperature": 0.7,
             "max_tokens": 1024,
+            "stream": False,
         }
 
         max_retries = 2
@@ -125,10 +126,26 @@ class CopywritingService:
                     response = client.post(api_url, json=payload, headers=headers)
 
                 if response.status_code == 200:
-                    data = response.json()
-                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    logger.info("LLM API call successful, response length: %d", len(content))
-                    return content
+                    raw_body = response.text
+                    if not raw_body.strip():
+                        last_error = "LLM API returned 200 but empty response body"
+                        logger.warning("LLM API empty body (attempt %d)", attempt + 1)
+                    else:
+                        try:
+                            data = response.json()
+                        except Exception as json_err:
+                            # Might be streaming response, try to parse SSE
+                            logger.warning("LLM API response not JSON, trying SSE parse. First 200 chars: %s", raw_body[:200])
+                            content = self._parse_sse_response(raw_body)
+                            if content:
+                                logger.info("LLM API call successful (SSE), response length: %d", len(content))
+                                return content
+                            last_error = f"LLM API returned non-JSON response: {str(json_err)}"
+                            continue
+
+                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        logger.info("LLM API call successful, response length: %d", len(content))
+                        return content
                 else:
                     last_error = f"LLM API returned status {response.status_code}: {response.text[:200]}"
                     logger.warning("LLM API error (attempt %d): %s", attempt + 1, last_error)
@@ -146,6 +163,22 @@ class CopywritingService:
 
         logger.error("LLM API call failed after all retries: %s", last_error)
         raise Exception(last_error)
+
+    def _parse_sse_response(self, raw_body: str) -> str:
+        """Parse Server-Sent Events (SSE) streaming response into full content."""
+        import json
+        content_parts = []
+        for line in raw_body.split("\n"):
+            line = line.strip()
+            if line.startswith("data: ") and line != "data: [DONE]":
+                try:
+                    chunk = json.loads(line[6:])
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    if "content" in delta:
+                        content_parts.append(delta["content"])
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    continue
+        return "".join(content_parts)
 
     def generate_copywriting(self, topic: str, task_id: Optional[str] = None, user_id: str = "", llm_config: dict = None) -> Task:
         """Generate copywriting for a topic.

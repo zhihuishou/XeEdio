@@ -25,6 +25,7 @@ class ErrorCode(str, Enum):
     TTS_SYNTHESIS_FAILED = "TTS_SYNTHESIS_FAILED"
     FFMPEG_ERROR = "FFMPEG_ERROR"
     SUBTASK_FAILED = "SUBTASK_FAILED"
+    MIXING_ERROR = "MIXING_ERROR"
 
 
 class ErrorDetail(BaseModel):
