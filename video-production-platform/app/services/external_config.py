@@ -140,3 +140,21 @@ class ExternalConfig:
         return {
             "max_concurrency": self.get("batch.max_concurrency", 3),
         }
+
+    def get_vlm_config(self) -> dict:
+        """Get VLM (Vision Language Model) configuration for AI Director."""
+        return {
+            "api_url": self.get("vlm.api_url", ""),
+            "api_key": self.get("vlm.api_key", ""),
+            "model": self.get("vlm.model", "gpt-5.4"),
+            "frame_interval": self.get("vlm.frame_interval", 2),
+            "max_frames": self.get("vlm.max_frames", 30),
+        }
+
+    def get_ai_tts_config(self) -> dict:
+        """Get AI TTS configuration with fallback settings."""
+        return {
+            "api_url": self.get("ai_tts.api_url", ""),
+            "api_key": self.get("ai_tts.api_key", ""),
+            "fallback_to_edge_tts": self.get("ai_tts.fallback_to_edge_tts", True),
+        }

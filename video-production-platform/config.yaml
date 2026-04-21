@@ -27,11 +27,29 @@ llm:
       key_hint: "从 platform.openai.com 获取"
 
   # 默认使用的模型
-  default_provider: "deepseek"
+  default_provider: "gpt-4o-mini"
 
   # 未来：替换为自建 API Gateway（Go 服务）
   # gateway_url: "http://localhost:8080/api/v1/llm"
   # gateway_enabled: false
+
+# VLM 多模态视觉模型（AI 编导核心）
+vlm:
+  api_url: "https://api.luxee.ai/v1/chat/completions"
+  api_key: "sk-8cee9cb9147b553008798bd2ace636dc8e50363d8f676a742a0535034bdcaece"
+  model: "gpt-5.4"
+  # 抽帧间隔（秒），每隔多少秒从 A-roll 抽取一帧送给 VLM 分析
+  frame_interval: 2
+  # 最大抽帧数（控制 token 消耗）
+  max_frames: 30
+
+# AI 口播 TTS API（高质量语音合成）
+ai_tts:
+  # 填写你的 AI 口播 API 配置
+  api_url: ""   # 待填写
+  api_key: ""   # 待填写
+  # 降级方案：如果 AI TTS API 不可用，自动降级到 Edge-TTS
+  fallback_to_edge_tts: true
 
 tts:
   # Edge-TTS 配置（免费）
