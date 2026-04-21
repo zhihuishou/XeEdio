@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}批量任务 - 视频生产平台{% endblock %}
+{% block nav_batches %}active{% endblock %}
+{% block topbar %}<span class="text-sm font-semibold text-slate-700">批量任务</span>{% endblock %}
 {% block content %}
 <div x-data="batchesPage()" x-init="init()">
     <!-- Page Header -->

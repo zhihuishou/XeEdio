@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}用户管理 - 视频生产平台{% endblock %}
+{% block nav_admin %}active{% endblock %}
+{% block topbar %}<span class="text-sm font-semibold text-slate-700">用户管理</span>{% endblock %}
 {% block content %}
 <div x-data="adminUsersPage()" x-init="init()">
     <!-- Page Header -->
