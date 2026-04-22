@@ -54,7 +54,7 @@ class AITTSService:
 
         # Step 1: Try external AI TTS API if configured
         external_success = False
-        if api_url and api_key:
+        if api_key:
             try:
                 self._call_external_api(text, output_path, api_url, api_key, voice)
                 external_success = True
@@ -102,13 +102,30 @@ class AITTSService:
         api_key: str,
         voice: Optional[str] = None,
     ) -> None:
-        """Call external AI TTS API (placeholder).
+        """Call Alibaba Cloud DashScope CosyVoice TTS API."""
+        import dashscope
+        from dashscope.audio.tts_v2 import SpeechSynthesizer
 
-        This is a placeholder that will be replaced with the actual API
-        integration when the user provides the API specification.
-        """
-        logger.info("AI TTS API not yet implemented — will fall back to Edge-TTS")
-        raise NotImplementedError("AI TTS API not yet implemented")
+        config = ExternalConfig.get_instance()
+        ai_tts_config = config.get_ai_tts_config()
+
+        dashscope.api_key = api_key or ai_tts_config.get("api_key", "")
+        model = ai_tts_config.get("model", "cosyvoice-v2")
+        tts_voice = voice or ai_tts_config.get("voice", "longxiaochun_v2")
+
+        if not dashscope.api_key:
+            raise RuntimeError("DashScope API key not configured")
+
+        synthesizer = SpeechSynthesizer(model=model, voice=tts_voice)
+        audio = synthesizer.call(text)
+
+        if not audio:
+            raise RuntimeError("DashScope TTS returned empty audio")
+
+        with open(output_path, "wb") as f:
+            f.write(audio)
+
+        logger.info("DashScope TTS: voice=%s, %d bytes -> %s", tts_voice, len(audio), output_path)
 
     @staticmethod
     def _synthesize_edge_tts(

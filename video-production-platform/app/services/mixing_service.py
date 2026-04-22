@@ -48,36 +48,41 @@ class MixingService:
         Raises:
             NotFoundError: If any referenced asset does not exist.
         """
-        # Validate A-roll assets exist
-        for asset_id in request.a_roll_asset_ids:
-            asset = self.db.query(Asset).filter(Asset.id == asset_id).first()
-            if not asset:
-                raise NotFoundError(
-                    message=f"A-Roll 素材不存在: {asset_id}",
-                    details={"asset_id": asset_id},
-                )
+        mixing_mode = request.mixing_mode
 
-        # Validate B-roll assets if provided
-        for asset_id in request.b_roll_asset_ids:
+        # Mode-specific validation
+        if mixing_mode in ("pure_mix", "mix_with_script"):
+            if not request.a_roll_asset_ids:
+                raise ValidationError(message="模式1/2需要至少一个 A-Roll 素材")
+        if mixing_mode == "broll_voiceover":
+            if not request.asset_ids:
+                raise ValidationError(message="纯素材模式需要至少一个素材")
+        if mixing_mode in ("mix_with_script", "broll_voiceover"):
+            if not request.tts_text or not request.tts_text.strip():
+                raise ValidationError(message="该模式需要提供配音文本")
+
+        # Validate all referenced assets exist
+        all_asset_ids = set(request.a_roll_asset_ids + request.b_roll_asset_ids + request.asset_ids)
+        for asset_id in all_asset_ids:
             asset = self.db.query(Asset).filter(Asset.id == asset_id).first()
             if not asset:
-                raise NotFoundError(
-                    message=f"B-Roll 素材不存在: {asset_id}",
-                    details={"asset_id": asset_id},
-                )
+                raise NotFoundError(message=f"素材不存在: {asset_id}")
 
         # Build mix_params JSON
         mix_params = json.dumps({
+            "mixing_mode": mixing_mode,
             "aspect_ratio": request.aspect_ratio,
             "transition": request.transition,
             "clip_duration": request.clip_duration,
             "concat_mode": request.concat_mode,
             "video_count": request.video_count,
+            "max_output_duration": request.max_output_duration,
             "tts_text": request.tts_text,
             "tts_voice": request.tts_voice,
             "bgm_enabled": request.bgm_enabled,
             "bgm_asset_id": request.bgm_asset_id,
             "bgm_volume": request.bgm_volume,
+            "director_prompt": request.director_prompt,
         }, ensure_ascii=False)
 
         # Create Task record
@@ -93,27 +98,20 @@ class MixingService:
         self.db.add(task)
         self.db.flush()
 
-        # Save TaskAsset records for A-roll
-        for i, asset_id in enumerate(request.a_roll_asset_ids):
-            ta = TaskAsset(
-                id=generate_uuid(),
-                task_id=task.id,
-                asset_id=asset_id,
-                roll_type="a_roll",
-                sequence_order=i,
-            )
-            self.db.add(ta)
-
-        # Save TaskAsset records for B-roll
-        for i, asset_id in enumerate(request.b_roll_asset_ids):
-            ta = TaskAsset(
-                id=generate_uuid(),
-                task_id=task.id,
-                asset_id=asset_id,
-                roll_type="b_roll",
-                sequence_order=i,
-            )
-            self.db.add(ta)
+        # Save TaskAsset records based on mode
+        if mixing_mode == "broll_voiceover":
+            # Mode 3: all assets are equal, store as "asset" roll_type
+            for i, asset_id in enumerate(request.asset_ids):
+                ta = TaskAsset(id=generate_uuid(), task_id=task.id, asset_id=asset_id, roll_type="asset", sequence_order=i)
+                self.db.add(ta)
+        else:
+            # Mode 1/2: separate A-roll and B-roll
+            for i, asset_id in enumerate(request.a_roll_asset_ids):
+                ta = TaskAsset(id=generate_uuid(), task_id=task.id, asset_id=asset_id, roll_type="a_roll", sequence_order=i)
+                self.db.add(ta)
+            for i, asset_id in enumerate(request.b_roll_asset_ids):
+                ta = TaskAsset(id=generate_uuid(), task_id=task.id, asset_id=asset_id, roll_type="b_roll", sequence_order=i)
+                self.db.add(ta)
 
         self.db.commit()
         self.db.refresh(task)
@@ -160,32 +158,47 @@ class MixingService:
             bgm_enabled = params.get("bgm_enabled", False)
             bgm_asset_id = params.get("bgm_asset_id")
             bgm_volume = params.get("bgm_volume", 0.2)
+            director_prompt = params.get("director_prompt", "")
 
-            # Resolve asset file paths
-            a_roll_assets = (
-                db.query(TaskAsset)
-                .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "a_roll")
-                .order_by(TaskAsset.sequence_order)
-                .all()
-            )
-            b_roll_assets = (
-                db.query(TaskAsset)
-                .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "b_roll")
-                .order_by(TaskAsset.sequence_order)
-                .all()
-            )
-
+            # Resolve asset file paths based on mode
             a_roll_paths = []
-            for ta in a_roll_assets:
-                asset = db.query(Asset).filter(Asset.id == ta.asset_id).first()
-                if asset and asset.file_path:
-                    a_roll_paths.append(asset.file_path)
-
             b_roll_paths = []
-            for ta in b_roll_assets:
-                asset = db.query(Asset).filter(Asset.id == ta.asset_id).first()
-                if asset and asset.file_path:
-                    b_roll_paths.append(asset.file_path)
+            all_asset_paths = []  # For mode 3
+
+            if mixing_mode == "broll_voiceover":
+                # Mode 3: all assets are equal
+                asset_records = (
+                    db.query(TaskAsset)
+                    .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "asset")
+                    .order_by(TaskAsset.sequence_order)
+                    .all()
+                )
+                for ta in asset_records:
+                    asset = db.query(Asset).filter(Asset.id == ta.asset_id).first()
+                    if asset and asset.file_path:
+                        all_asset_paths.append(asset.file_path)
+            else:
+                # Mode 1/2: separate A-roll and B-roll
+                a_roll_assets = (
+                    db.query(TaskAsset)
+                    .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "a_roll")
+                    .order_by(TaskAsset.sequence_order)
+                    .all()
+                )
+                b_roll_assets = (
+                    db.query(TaskAsset)
+                    .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "b_roll")
+                    .order_by(TaskAsset.sequence_order)
+                    .all()
+                )
+                for ta in a_roll_assets:
+                    asset = db.query(Asset).filter(Asset.id == ta.asset_id).first()
+                    if asset and asset.file_path:
+                        a_roll_paths.append(asset.file_path)
+                for ta in b_roll_assets:
+                    asset = db.query(Asset).filter(Asset.id == ta.asset_id).first()
+                    if asset and asset.file_path:
+                        b_roll_paths.append(asset.file_path)
 
             output_dir = f"storage/tasks/{task_id}"
             os.makedirs(output_dir, exist_ok=True)
@@ -195,23 +208,76 @@ class MixingService:
 
             ai_director_used = False
 
-            # Generate each version
+            # --- Split long A-roll into segments ---
+            # If A-roll total duration > max_output_duration, split into multiple segments.
+            # Each segment becomes one output video.
+            max_output_duration = params.get("max_output_duration", 60)
+
+            # Calculate total A-roll duration
+            total_a_duration = 0.0
+            for path in a_roll_paths:
+                dur = self._probe_duration(path) or 0
+                total_a_duration += dur
+
+            # Determine how many segments to produce
+            if total_a_duration > max_output_duration and mixing_mode in ("pure_mix", "mix_with_script"):
+                import math
+                num_segments = min(math.ceil(total_a_duration / max_output_duration), video_count * 5)
+                segment_duration = total_a_duration / num_segments
+                logger.info(
+                    "splitting %.1fs A-roll into %d segments of ~%.1fs each (max_output=%ds)",
+                    total_a_duration, num_segments, segment_duration, max_output_duration,
+                )
+            else:
+                num_segments = video_count
+                segment_duration = total_a_duration
+
+            # Pre-split A-roll into temp files if needed
+            a_roll_segment_paths = []
+            if num_segments > 1 and len(a_roll_paths) == 1:
+                # Split single A-roll file into segments using FFmpeg
+                src = a_roll_paths[0]
+                for seg_i in range(num_segments):
+                    seg_start = seg_i * segment_duration
+                    seg_end = min((seg_i + 1) * segment_duration, total_a_duration)
+                    seg_path = os.path.join(output_dir, f"aroll-seg-{seg_i}.mp4")
+                    cmd = [
+                        "ffmpeg", "-y", "-i", src,
+                        "-ss", str(seg_start), "-to", str(seg_end),
+                        "-c", "copy", "-avoid_negative_ts", "1",
+                        seg_path,
+                    ]
+                    import subprocess as _sp
+                    _sp.run(cmd, capture_output=True, check=False)
+                    if os.path.exists(seg_path) and os.path.getsize(seg_path) > 0:
+                        a_roll_segment_paths.append([seg_path])
+                    else:
+                        logger.warning("failed to split segment %d", seg_i)
+            else:
+                # Use original A-roll paths for each version
+                for _ in range(num_segments):
+                    a_roll_segment_paths.append(a_roll_paths)
+
+            # Generate each segment/version
             output_paths = []
-            for version in range(1, video_count + 1):
+            actual_count = min(len(a_roll_segment_paths), num_segments)
+            for version in range(1, actual_count + 1):
+                seg_a_paths = a_roll_segment_paths[version - 1]
                 version_output = os.path.join(output_dir, f"output-{version}.mp4")
-                logger.info("generating version %d/%d for task %s (mode=%s)", version, video_count, task_id, mixing_mode)
+                logger.info("generating segment %d/%d for task %s (mode=%s)", version, actual_count, task_id, mixing_mode)
 
                 if mixing_mode == "pure_mix":
                     # --- Pure Mix: A-roll audio + AI Director ---
                     audio_file = os.path.join(output_dir, f"extracted_audio-{version}.mp3")
-                    mixing_engine.extract_audio_from_videos(a_roll_paths, audio_file)
+                    mixing_engine.extract_audio_from_videos(seg_a_paths, audio_file)
 
                     from app.services.ai_director_service import AIDirectorService
                     ai_director = AIDirectorService(task_id, output_dir)
                     transcript = ai_director._transcribe_audio(audio_file)
                     raw_output, ai_used = ai_director.run_pipeline(
-                        a_roll_paths, b_roll_paths, transcript,
+                        seg_a_paths, b_roll_paths, transcript,
                         aspect_ratio=aspect_ratio, transition=transition, audio_file=audio_file,
+                        director_prompt=director_prompt,
                     )
                     if ai_used:
                         ai_director_used = True
@@ -242,8 +308,9 @@ class MixingService:
 
                     ai_director = AIDirectorService(task_id, output_dir)
                     raw_output, ai_used = ai_director.run_pipeline(
-                        a_roll_paths, b_roll_paths, tts_text,
+                        seg_a_paths, b_roll_paths, tts_text,
                         aspect_ratio=aspect_ratio, transition=transition, audio_file=audio_file,
+                        director_prompt=director_prompt,
                     )
                     if ai_used:
                         ai_director_used = True
@@ -262,21 +329,19 @@ class MixingService:
                             _shutil.copy(raw_output, version_output)
 
                 elif mixing_mode == "broll_voiceover":
-                    # --- Pure B-roll + AI Voiceover ---
+                    # --- Mode 3: Pure assets + AI Voiceover ---
                     from app.services.ai_tts_service import AITTSService
                     ai_tts = AITTSService()
                     audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
 
                     mixing_engine.combine_videos(
                         combined_video_path=version_output,
-                        video_paths=b_roll_paths,
+                        video_paths=all_asset_paths,
                         audio_file=audio_file,
                         video_aspect=aspect_ratio,
                         video_concat_mode=concat_mode,
                         video_transition=transition,
                         max_clip_duration=clip_duration,
-                        a_roll_paths=[],
-                        b_roll_paths=b_roll_paths,
                     )
 
                     # Script-based subtitles
@@ -292,17 +357,15 @@ class MixingService:
                 else:
                     # Fallback: old blind-cut logic
                     audio_file = os.path.join(output_dir, f"extracted_audio-{version}.mp3")
-                    mixing_engine.extract_audio_from_videos(a_roll_paths, audio_file)
+                    mixing_engine.extract_audio_from_videos(seg_a_paths, audio_file)
                     mixing_engine.combine_videos(
                         combined_video_path=version_output,
-                        video_paths=a_roll_paths + b_roll_paths,
+                        video_paths=seg_a_paths + b_roll_paths,
                         audio_file=audio_file,
                         video_aspect=aspect_ratio,
                         video_concat_mode=concat_mode,
                         video_transition=transition,
                         max_clip_duration=clip_duration,
-                        a_roll_paths=a_roll_paths,
-                        b_roll_paths=b_roll_paths,
                     )
 
                 # BGM mixing (all modes)

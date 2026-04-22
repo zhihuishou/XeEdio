@@ -146,6 +146,55 @@
             <p class="text-slate-500 mt-1 text-sm">选择素材、配置参数，一键生成混剪视频</p>
         </div>
 
+        <!-- Mode Selector (before steps) -->
+        <div class="bg-white rounded-3xl p-7 shadow-sm shadow-slate-200/50 mb-8">
+            <h3 class="text-sm font-bold text-slate-900 mb-4">选择混剪模式</h3>
+            <div class="grid grid-cols-3 gap-4">
+                <div @click="params.mixing_mode = 'pure_mix'"
+                     class="relative rounded-2xl border-2 p-4 cursor-pointer transition-all duration-300"
+                     :class="params.mixing_mode === 'pure_mix' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
+                    <div class="flex flex-col items-center text-center">
+                        <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-colors duration-300"
+                             :class="params.mixing_mode === 'pure_mix' ? 'bg-violet-100' : 'bg-slate-100'">
+                            <svg class="w-5 h-5" :class="params.mixing_mode === 'pure_mix' ? 'text-violet-500' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                            </svg>
+                        </div>
+                        <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'pure_mix' ? 'text-violet-700' : 'text-slate-700'">纯混剪</h4>
+                        <p class="text-xs text-slate-400 mt-1">A-Roll + B-Roll 智能混剪</p>
+                    </div>
+                </div>
+                <div @click="params.mixing_mode = 'mix_with_script'"
+                     class="relative rounded-2xl border-2 p-4 cursor-pointer transition-all duration-300"
+                     :class="params.mixing_mode === 'mix_with_script' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
+                    <div class="flex flex-col items-center text-center">
+                        <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-colors duration-300"
+                             :class="params.mixing_mode === 'mix_with_script' ? 'bg-violet-100' : 'bg-slate-100'">
+                            <svg class="w-5 h-5" :class="params.mixing_mode === 'mix_with_script' ? 'text-violet-500' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'mix_with_script' ? 'text-violet-700' : 'text-slate-700'">混剪 + AI 口播</h4>
+                        <p class="text-xs text-slate-400 mt-1">A-Roll + B-Roll + AI 配音</p>
+                    </div>
+                </div>
+                <div @click="params.mixing_mode = 'broll_voiceover'"
+                     class="relative rounded-2xl border-2 p-4 cursor-pointer transition-all duration-300"
+                     :class="params.mixing_mode === 'broll_voiceover' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
+                    <div class="flex flex-col items-center text-center">
+                        <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-colors duration-300"
+                             :class="params.mixing_mode === 'broll_voiceover' ? 'bg-violet-100' : 'bg-slate-100'">
+                            <svg class="w-5 h-5" :class="params.mixing_mode === 'broll_voiceover' ? 'text-violet-500' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                            </svg>
+                        </div>
+                        <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'broll_voiceover' ? 'text-violet-700' : 'text-slate-700'">纯素材 + AI 口播</h4>
+                        <p class="text-xs text-slate-400 mt-1">素材拼接 + AI 配音 + 字幕</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Step Progress Indicator -->
         <div class="mb-10">
             <div class="flex items-center justify-between max-w-2xl mx-auto">
@@ -191,11 +240,11 @@
             <div class="bg-white rounded-3xl p-7 shadow-sm shadow-slate-200/50">
                 <div class="flex items-center justify-between mb-6">
                     <div>
-                        <h2 class="text-lg font-bold text-slate-900">选择 A-Roll 主画面</h2>
-                        <p class="text-sm text-slate-500 mt-1">选择达人口播或产品展示视频作为主画面素材</p>
+                        <h2 class="text-lg font-bold text-slate-900" x-text="params.mixing_mode === 'broll_voiceover' ? '选择素材' : '选择 A-Roll 主画面'"></h2>
+                        <p class="text-sm text-slate-500 mt-1" x-text="params.mixing_mode === 'broll_voiceover' ? '选择要拼接的视频素材' : '选择达人口播或产品展示视频作为主画面素材'"></p>
                     </div>
                     <span class="tag-gradient text-xs font-medium text-slate-500 px-3 py-1.5 rounded-full"
-                          x-text="'已选 ' + selectedARoll.length + ' 个'"></span>
+                          x-text="'已选 ' + (params.mixing_mode === 'broll_voiceover' ? selectedAssets.length : selectedARoll.length) + ' 个'"></span>
                 </div>
 
                 <!-- Category Filter Tabs -->
@@ -230,9 +279,9 @@
                 <!-- Asset Grid -->
                 <div x-show="!loadingAssets && allAssets.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 mb-6">
                     <template x-for="asset in allAssets" :key="asset.id">
-                        <div @click="toggleARoll(asset)"
+                        <div @click="params.mixing_mode === 'broll_voiceover' ? toggleAsset(asset) : toggleARoll(asset)"
                              class="relative rounded-2xl overflow-hidden cursor-pointer transition-all duration-300 group"
-                             :class="isARollSelected(asset.id) ? 'ring-3 ring-violet-400 ring-offset-2 shadow-md' : 'hover:shadow-md'">
+                             :class="(params.mixing_mode === 'broll_voiceover' ? isAssetSelected(asset.id) : isARollSelected(asset.id)) ? 'ring-3 ring-violet-400 ring-offset-2 shadow-md' : 'hover:shadow-md'">
                             <!-- Thumbnail -->
                             <div class="aspect-video bg-slate-100 relative overflow-hidden">
                                 <img :src="asset.thumbnail_path ? '/' + asset.thumbnail_path : '/static/placeholder.svg'"
@@ -245,7 +294,7 @@
                                           x-text="formatDuration(asset.duration)"></span>
                                 </template>
                                 <!-- Selected check -->
-                                <div x-show="isARollSelected(asset.id)"
+                                <div x-show="params.mixing_mode === 'broll_voiceover' ? isAssetSelected(asset.id) : isARollSelected(asset.id)"
                                      class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full btn-gradient flex items-center justify-center">
                                     <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/>
@@ -270,10 +319,10 @@
                 </div>
 
                 <!-- Selected A-Roll Section -->
-                <div x-show="selectedARoll.length > 0" class="mt-6 pt-6 border-t border-slate-100">
+                <div x-show="(params.mixing_mode === 'broll_voiceover' ? selectedAssets.length : selectedARoll.length) > 0" class="mt-6 pt-6 border-t border-slate-100">
                     <h3 class="text-sm font-semibold text-slate-700 mb-3">已选素材</h3>
                     <div class="flex flex-wrap gap-3">
-                        <template x-for="(asset, idx) in selectedARoll" :key="asset.id">
+                        <template x-for="(asset, idx) in (params.mixing_mode === 'broll_voiceover' ? selectedAssets : selectedARoll)" :key="asset.id">
                             <div class="flex items-center bg-slate-50 rounded-xl px-3 py-2 space-x-2 group">
                                 <img :src="asset.thumbnail_path ? '/' + asset.thumbnail_path : '/static/placeholder.svg'"
                                      class="w-10 h-7 rounded-lg object-cover"
@@ -282,7 +331,7 @@
                                 <template x-if="asset.duration">
                                     <span class="text-xs text-slate-400" x-text="formatDuration(asset.duration)"></span>
                                 </template>
-                                <button @click="removeARoll(idx)" class="text-slate-300 hover:text-red-400 transition-colors cursor-pointer ml-1">
+                                <button @click="params.mixing_mode === 'broll_voiceover' ? removeAsset(idx) : removeARoll(idx)" class="text-slate-300 hover:text-red-400 transition-colors cursor-pointer ml-1">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                                     </svg>
@@ -297,7 +346,7 @@
         <!-- ============================================================ -->
         <!-- STEP 2: Select B-Roll (Optional) -->
         <!-- ============================================================ -->
-        <div x-show="step === 2" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
+        <div x-show="step === 2 && params.mixing_mode !== 'broll_voiceover'" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
             <div class="bg-white rounded-3xl p-7 shadow-sm shadow-slate-200/50">
                 <div class="flex items-center justify-between mb-6">
                     <div>
@@ -471,58 +520,6 @@
         <div x-show="step === 3" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4" x-transition:enter-end="opacity-100 translate-y-0">
             <div class="space-y-5">
 
-                <!-- Mode Selector -->
-                <div class="bg-white rounded-3xl p-7 shadow-sm shadow-slate-200/50">
-                    <h3 class="text-sm font-bold text-slate-900 mb-4">混剪模式</h3>
-                    <div class="grid grid-cols-3 gap-4">
-                        <!-- Pure Mix -->
-                        <div @click="params.mixing_mode = 'pure_mix'"
-                             class="relative rounded-2xl border-2 p-4 cursor-pointer transition-all duration-300"
-                             :class="params.mixing_mode === 'pure_mix' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
-                            <div class="flex flex-col items-center text-center">
-                                <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-colors duration-300"
-                                     :class="params.mixing_mode === 'pure_mix' ? 'bg-violet-100' : 'bg-slate-100'">
-                                    <svg class="w-5 h-5" :class="params.mixing_mode === 'pure_mix' ? 'text-violet-500' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                                    </svg>
-                                </div>
-                                <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'pure_mix' ? 'text-violet-700' : 'text-slate-700'">纯混剪</h4>
-                                <p class="text-xs text-slate-400 mt-1">达人视频 + 素材插入</p>
-                            </div>
-                        </div>
-                        <!-- Mix with Script -->
-                        <div @click="params.mixing_mode = 'mix_with_script'"
-                             class="relative rounded-2xl border-2 p-4 cursor-pointer transition-all duration-300"
-                             :class="params.mixing_mode === 'mix_with_script' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
-                            <div class="flex flex-col items-center text-center">
-                                <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-colors duration-300"
-                                     :class="params.mixing_mode === 'mix_with_script' ? 'bg-violet-100' : 'bg-slate-100'">
-                                    <svg class="w-5 h-5" :class="params.mixing_mode === 'mix_with_script' ? 'text-violet-500' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                    </svg>
-                                </div>
-                                <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'mix_with_script' ? 'text-violet-700' : 'text-slate-700'">混剪 + AI 脚本</h4>
-                                <p class="text-xs text-slate-400 mt-1">达人视频 + AI 配音 + 字幕</p>
-                            </div>
-                        </div>
-                        <!-- B-roll Voiceover -->
-                        <div @click="params.mixing_mode = 'broll_voiceover'"
-                             class="relative rounded-2xl border-2 p-4 cursor-pointer transition-all duration-300"
-                             :class="params.mixing_mode === 'broll_voiceover' ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
-                            <div class="flex flex-col items-center text-center">
-                                <div class="w-10 h-10 rounded-xl mb-3 flex items-center justify-center transition-colors duration-300"
-                                     :class="params.mixing_mode === 'broll_voiceover' ? 'bg-violet-100' : 'bg-slate-100'">
-                                    <svg class="w-5 h-5" :class="params.mixing_mode === 'broll_voiceover' ? 'text-violet-500' : 'text-slate-400'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
-                                    </svg>
-                                </div>
-                                <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'broll_voiceover' ? 'text-violet-700' : 'text-slate-700'">纯素材 + AI 口播</h4>
-                                <p class="text-xs text-slate-400 mt-1">素材拼接 + AI 配音 + 字幕</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Aspect Ratio -->
                 <div class="bg-white rounded-3xl p-7 shadow-sm shadow-slate-200/50">
                     <h3 class="text-sm font-bold text-slate-900 mb-4">画面比例</h3>
@@ -576,8 +573,8 @@
                             </select>
                         </div>
 
-                        <!-- Clip Duration Slider -->
-                        <div>
+                        <!-- Clip Duration Slider (only for non-AI-Director modes) -->
+                        <div x-show="params.mixing_mode === 'broll_voiceover'">
                             <div class="flex items-center justify-between mb-2">
                                 <label class="text-xs font-medium text-slate-600">片段时长</label>
                                 <span class="text-sm font-bold text-violet-600" x-text="params.clip_duration + ' 秒'"></span>
@@ -588,6 +585,31 @@
                                 <span>2s</span>
                                 <span>15s</span>
                             </div>
+                            <p class="text-xs text-slate-400 mt-1">每个 B-Roll 片段的最大时长</p>
+                        </div>
+
+                        <!-- Max Output Duration -->
+                        <div>
+                            <div class="flex items-center justify-between mb-2">
+                                <label for="mix-max-duration" class="text-xs font-medium text-slate-600">每段输出时长</label>
+                                <span class="text-sm font-bold text-violet-600" x-text="params.max_output_duration + ' 秒'"></span>
+                            </div>
+                            <input id="mix-max-duration" type="range" x-model.number="params.max_output_duration" min="15" max="300" step="5"
+                                   class="w-full cursor-pointer">
+                            <div class="flex justify-between text-xs text-slate-400 mt-1">
+                                <span>15s</span>
+                                <span>300s</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-1">长视频会按此时长自动分段，每段独立混剪</p>
+                        </div>
+
+                        <!-- AI Director Prompt (Mode 1/2 only) -->
+                        <div x-show="params.mixing_mode !== 'broll_voiceover'">
+                            <label for="director-prompt" class="text-xs font-medium text-slate-600 mb-1.5 block">AI 编导指令（可选）</label>
+                            <textarea id="director-prompt" x-model="params.director_prompt" rows="3"
+                                      placeholder="例如：多插入产品特写镜头、在提到价格时切入B-roll、前10秒不要切换画面..."
+                                      class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300 resize-none"></textarea>
+                            <p class="text-xs text-slate-400 mt-1">自定义剪辑建议，AI 编导会参考你的指令决定 B-Roll 插入时机</p>
                         </div>
 
                         <!-- Concat Mode -->
@@ -656,14 +678,18 @@
                         </div>
                         <div>
                             <label class="text-xs font-medium text-slate-600 mb-1.5 block">语音角色</label>
-                            <select x-model="params.tts_voice"
-                                    class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-transparent transition-all duration-300 appearance-none cursor-pointer">
-                                <option value="">请选择语音</option>
-                                <option value="zh-CN-XiaoxiaoNeural">晓晓（女声）</option>
-                                <option value="zh-CN-YunxiNeural">云希（男声）</option>
-                                <option value="zh-CN-YunjianNeural">云健（男声）</option>
-                                <option value="zh-CN-XiaoyiNeural">晓伊（女声）</option>
-                            </select>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                                <template x-for="v in voiceList" :key="v.id">
+                                    <div @click="params.tts_voice = v.id"
+                                         class="relative rounded-xl border-2 p-3 cursor-pointer transition-all duration-300 text-center"
+                                         :class="params.tts_voice === v.id ? 'border-violet-400 bg-violet-50/50' : 'border-slate-200 hover:border-slate-300'">
+                                        <p class="text-sm font-semibold" :class="params.tts_voice === v.id ? 'text-violet-700' : 'text-slate-700'" x-text="v.name"></p>
+                                        <p class="text-xs text-slate-400" x-text="v.gender"></p>
+                                        <button @click.stop="previewVoice(v)" class="mt-1 text-xs text-violet-500 hover:text-violet-700 cursor-pointer">▶ 试听</button>
+                                    </div>
+                                </template>
+                            </div>
+                            <audio x-ref="voicePreviewAudio" class="hidden"></audio>
                         </div>
                     </div>
                 </div>
@@ -744,7 +770,7 @@
                             <p class="text-xs text-slate-400 mb-1">转场效果</p>
                             <p class="text-sm font-semibold text-slate-700" x-text="getTransitionLabel(params.transition)"></p>
                         </div>
-                        <div class="bg-slate-50 rounded-xl p-4">
+                        <div class="bg-slate-50 rounded-xl p-4" x-show="params.mixing_mode === 'broll_voiceover'">
                             <p class="text-xs text-slate-400 mb-1">片段时长</p>
                             <p class="text-sm font-semibold text-slate-700" x-text="params.clip_duration + ' 秒'"></p>
                         </div>
@@ -755,6 +781,10 @@
                         <div class="bg-slate-50 rounded-xl p-4">
                             <p class="text-xs text-slate-400 mb-1">输出数量</p>
                             <p class="text-sm font-semibold text-slate-700" x-text="params.video_count + ' 个版本'"></p>
+                        </div>
+                        <div class="bg-slate-50 rounded-xl p-4">
+                            <p class="text-xs text-slate-400 mb-1">每段时长</p>
+                            <p class="text-sm font-semibold text-slate-700" x-text="params.max_output_duration + ' 秒'"></p>
                         </div>
                         <template x-if="params.tts_enabled">
                             <div class="bg-violet-50 rounded-xl p-4">
@@ -976,6 +1006,7 @@
                 bRollAssets: [],
                 bRollFilter: '',
                 selectedBRoll: [],
+                selectedAssets: [],  // Mode 3: flat asset list (no A/B distinction)
                 pexelsTopic: '',
                 pexelsSearch: '',
                 pexelsKeywords: [],
@@ -986,11 +1017,13 @@
                 // Step 3 — Params
                 params: {
                     mixing_mode: 'pure_mix',
+                    director_prompt: '',
                     aspect_ratio: '9:16',
                     transition: 'none',
                     clip_duration: 5,
                     concat_mode: 'random',
                     video_count: 1,
+                    max_output_duration: 60,
                     tts_enabled: false,
                     tts_text: '',
                     tts_voice: '',
@@ -999,6 +1032,7 @@
                     bgm_volume: 0.2,
                 },
                 bgmAssets: [],
+                voiceList: [],
 
                 // Step 4 — Generate
                 taskId: null,
@@ -1021,33 +1055,41 @@
                     }
                     this.loadAssets('aroll');
                     this.loadBGMAssets();
+                    this.loadVoices();
                 },
 
                 // ---- Navigation ----
                 nextStep() {
-                    // When broll_voiceover, skip Step 1 (A-roll selection)
-                    if (this.params.mixing_mode === 'broll_voiceover' && this.step === 1) {
-                        this.step = 2;
-                        this.loadAssets('broll');
-                        return;
+                    const isMode3 = this.params.mixing_mode === 'broll_voiceover';
+
+                    if (isMode3) {
+                        // Mode 3: Step 1 = select assets (flat), Step 2 = skip, Step 3 = params
+                        if (this.step === 1 && this.selectedAssets.length === 0) {
+                            this.showToast('请至少选择一个素材', 'warning');
+                            return;
+                        }
+                        // Skip Step 2 (B-roll) entirely for mode 3
+                        if (this.step === 1) { this.step = 3; return; }
+                    } else {
+                        // Mode 1/2: Step 1 = A-roll, Step 2 = B-roll
+                        if (this.step === 1 && this.selectedARoll.length === 0) {
+                            this.showToast('请至少选择一个 A-Roll 素材', 'warning');
+                            return;
+                        }
                     }
-                    if (this.step === 1 && this.params.mixing_mode !== 'broll_voiceover' && this.selectedARoll.length === 0) {
-                        this.showToast('请至少选择一个 A-Roll 素材', 'warning');
-                        return;
-                    }
+
                     if (this.step < 4) {
                         this.step++;
                         if (this.step === 2) this.loadAssets('broll');
                     }
                 },
                 prevStep() {
-                    if (this.step > 1) {
-                        // When broll_voiceover, skip back over Step 1
-                        if (this.params.mixing_mode === 'broll_voiceover' && this.step === 2) {
-                            return; // Can't go back past Step 2 in broll_voiceover mode
-                        }
-                        this.step--;
+                    const isMode3 = this.params.mixing_mode === 'broll_voiceover';
+                    if (isMode3 && this.step === 3) {
+                        this.step = 1;
+                        return;
                     }
+                    if (this.step > 1) this.step--;
                 },
 
                 // ---- Asset Loading ----
@@ -1082,7 +1124,26 @@
                             this.bgmAssets = data.items || data.assets || data || [];
                         }
                     } catch (e) {
-                        // BGM loading is optional, silently fail
+                    }
+                },
+
+                async loadVoices() {
+                    try {
+                        const data = await apiCall('GET', '/api/mix/voices');
+                        if (data && data.voices) {
+                            this.voiceList = data.voices;
+                            if (!this.params.tts_voice && this.voiceList.length > 0) {
+                                this.params.tts_voice = this.voiceList[0].id;
+                            }
+                        }
+                    } catch (e) {}
+                },
+
+                previewVoice(voice) {
+                    const audio = this.$refs.voicePreviewAudio;
+                    if (audio) {
+                        audio.src = voice.preview_url;
+                        audio.play();
                     }
                 },
 
@@ -1116,6 +1177,19 @@
                 },
                 removeBRoll(idx) {
                     this.selectedBRoll.splice(idx, 1);
+                },
+
+                // ---- Mode 3: Flat asset selection ----
+                toggleAsset(asset) {
+                    const idx = this.selectedAssets.findIndex(a => a.id === asset.id);
+                    if (idx >= 0) this.selectedAssets.splice(idx, 1);
+                    else this.selectedAssets.push({...asset});
+                },
+                isAssetSelected(id) {
+                    return this.selectedAssets.some(a => a.id === id);
+                },
+                removeAsset(idx) {
+                    this.selectedAssets.splice(idx, 1);
                 },
 
                 // ---- Pexels ----
@@ -1188,13 +1262,14 @@
 
                 // ---- Mix Task ----
                 async startMix() {
+                    const isMode3 = this.params.mixing_mode === 'broll_voiceover';
                     // Validate based on mode
-                    if (this.params.mixing_mode !== 'broll_voiceover' && this.selectedARoll.length === 0) {
+                    if (!isMode3 && this.selectedARoll.length === 0) {
                         this.showToast('请至少选择一个 A-Roll 素材', 'warning');
                         return;
                     }
-                    if (this.params.mixing_mode === 'broll_voiceover' && this.selectedBRoll.length === 0) {
-                        this.showToast('纯素材模式需要至少一个 B-Roll 素材', 'warning');
+                    if (isMode3 && this.selectedAssets.length === 0) {
+                        this.showToast('请至少选择一个素材', 'warning');
                         return;
                     }
                     if (this.params.mixing_mode !== 'pure_mix' && !this.params.tts_text.trim()) {
@@ -1204,21 +1279,25 @@
                     this.generating = true;
                     try {
                         const needsTts = this.params.mixing_mode !== 'pure_mix' || this.params.tts_enabled;
+                        const isMode3 = this.params.mixing_mode === 'broll_voiceover';
                         const body = {
                             topic: '智能混剪',
-                            a_roll_asset_ids: this.selectedARoll.map(a => a.id),
-                            b_roll_asset_ids: this.selectedBRoll.map(a => a.id),
+                            a_roll_asset_ids: isMode3 ? [] : this.selectedARoll.map(a => a.id),
+                            b_roll_asset_ids: isMode3 ? [] : this.selectedBRoll.map(a => a.id),
+                            asset_ids: isMode3 ? this.selectedAssets.map(a => a.id) : [],
                             aspect_ratio: this.params.aspect_ratio,
                             transition: this.params.transition,
                             clip_duration: this.params.clip_duration,
                             concat_mode: this.params.concat_mode,
                             video_count: this.params.video_count,
+                            max_output_duration: this.params.max_output_duration,
                             tts_text: needsTts ? this.params.tts_text : null,
                             tts_voice: needsTts ? this.params.tts_voice : null,
                             bgm_enabled: this.params.bgm_enabled,
                             bgm_asset_id: this.params.bgm_enabled ? this.params.bgm_asset_id : null,
                             bgm_volume: this.params.bgm_volume,
                             mixing_mode: this.params.mixing_mode,
+                            director_prompt: this.params.director_prompt || null,
                         };
                         const data = await apiCall('POST', '/api/mix/create', body);
                         if (data) {

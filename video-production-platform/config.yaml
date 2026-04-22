@@ -43,12 +43,12 @@ vlm:
   # 最大抽帧数（控制 token 消耗）
   max_frames: 30
 
-# AI 口播 TTS API（高质量语音合成）
+# AI 口播 TTS API（阿里云百炼 CosyVoice）
 ai_tts:
-  # 填写你的 AI 口播 API 配置
-  api_url: ""   # 待填写
-  api_key: ""   # 待填写
-  # 降级方案：如果 AI TTS API 不可用，自动降级到 Edge-TTS
+  provider: "dashscope"  # dashscope = 阿里云百炼
+  api_key: "sk-92ae3f703c814454a5537ab42c860f3d"
+  model: "cosyvoice-v2"
+  voice: "longyingtian"  # 甜甜（默认音色）
   fallback_to_edge_tts: true
 
 tts:
@@ -68,3 +68,7 @@ upload:
 
 batch:
   max_concurrency: 3
+
+# Pexels 免费商用视频素材 API
+pexels:
+  api_key: "P6KSrRWsl3RgerXTOpfkJE3LuwTyQBJt13xvXvWShyWJRjn8H3MOfoWB"  # 从 www.pexels.com/api 获取
