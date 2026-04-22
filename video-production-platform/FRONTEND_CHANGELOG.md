@@ -26,15 +26,16 @@
 
 | 导航项 | 路由 | 图标 |
 |--------|------|------|
-| 首页 | `/` | Home |
+| 仪表盘-首页 | `/` | Home |
 | **素材库** | `/assets` | 图片库图标 |
-| 文案生成 | `/tasks/new` | 编辑图标 |
-| 任务列表 | `/tasks` | 清单图标 |
-| **智能剪辑** | `/mix` | 剪辑图标 |
+| **任务列表** | `/tasks` | 清单图标 |
 | 批量任务 | `/batches` | 堆叠图标 |
-| 审核 (operator/admin 可见) | `/reviews` | 圆形勾选 |
-| 系统设置 (admin 可见) | `/admin/config` | 齿轮图标 |
-| 用户（底部，点击=退出） | — | 渐变头像 |
+| 审核 | `/reviews` | 圆形勾选 |
+| 系统设置 | `/admin/config` | 齿轮图标 |
+| 用户头像 | — | 退出登录 |
+
+> [!NOTE]
+> “文案生成”与“智能剪辑”已从侧边栏移除，作为一级产品入口仅保留在首页 Bento Grid 中。
 
 ---
 
@@ -42,14 +43,13 @@
 
 ### `home.html` — **全文重写**
 - **继承** 新 `base.html`，不再是独立文件
-- 5 个功能卡片布局调整为 **4 列 Bento 网格**：
-  - **Card 1** 智能视频剪辑（2 列 2 行 Hero 卡）→ `/mix` ✅ 可点击
-  - **Card 2** 素材库 → `/assets` ✅ 可点击
-  - **Card 3** 任务列表 → `/tasks` ✅ 可点击
-  - **Card 4** AI 视频翻译（即将上线，`opacity-60`）
-  - **Card 5** AI 一键成片（即将上线，`opacity-60`）
-- 新增底部 **3 列快捷数据统计行**（本周生成 / 素材总数 / 待审核）
-- 素材总数通过 `GET /api/assets` 动态加载
+- 恢复为 **5 个 AI 产品功能模块**（4 列 Bento 网格）：
+  - **Card A** 智能视频剪辑（2 列 2 行 Hero 卡）
+  - **Card B** 智镜视频解析
+  - **Card C** AI 视频翻译
+  - **Card D** AI 写脚本（带脉冲动画）
+  - **Card E** AI 一键成片
+- 新增底部 **3 列快捷数据统计行**
 
 ### `assets.html` — 追加 `nav_assets`、`topbar` block
 - 侧边栏"素材库"项高亮 `active`
@@ -59,7 +59,12 @@
 - 侧边栏"任务列表"项高亮 `active`
 - 顶部栏显示"任务列表"标题
 
-### `mix.html` — 追加 `nav_mix`、`topbar` block
+### `mix.html` — **参数配置增强**
+- **新增：可选字幕逻辑**
+  - 在 Step 3 注入了“可选字幕”开关。
+  - **逻辑限制**：必须先启用 TTS 配音，字幕开关才可点击。
+  - Step 4 的配置摘要已同步加入“自动字幕”状态显示。
+
 ### `tasks_new.html` — 追加 `nav_tasks_new`、`topbar` block
 ### `batches.html` — 追加 `nav_batches`、`topbar` block
 ### `reviews.html` — 追加 `nav_reviews`、`topbar` block
@@ -87,10 +92,10 @@
 
 ---
 
-## 4. 后端变更说明（配合前端）
+## 4. 后端变更建议 (API / Service)
 
-| 项目 | 说明 |
-|------|------|
-| 无需修改路由 | 所有页面路由不变，Jinja2 模板继承已完全重构 |
-| 首页统计接口 | home.html 调用 `GET /api/assets` 的返回需包含 `total` 字段 |
-| `base.html` 不再独立 | 已废弃旧的顶部 nav 结构，所有子页都必须 `{% extends "base.html" %}` |
+| 项目 | 类型 | 说明 |
+|------|------|------|
+| `MixCreateRequest` | **Schema** | 新增 `subtitle_enabled: bool` 字段，默认为 `False` |
+| `MixingService` | **Logic** | 在后台混剪时，若 `subtitle_enabled` 为真，需调用 `subtitle_generator` 烧录字幕 |
+| 素材统计 | **接口** | `GET /api/assets` 需返回 `{"total": int, ...}` |
