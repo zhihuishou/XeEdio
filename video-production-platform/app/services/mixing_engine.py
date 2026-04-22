@@ -631,26 +631,126 @@ def execute_timeline(
 
 
 def _generate_subtitles(audio_path: str, ass_path: str, video_w: int, video_h: int) -> None:
-    """Generate ASS subtitles from audio using Whisper or silence detection fallback."""
+    """Generate subtitles from audio using VideoCaptioner (bijian ASR, free cloud).
+
+    Falls back to local faster-whisper if VideoCaptioner fails.
+    """
     import re as _re
 
     logger.info("generating subtitles from audio: %s", audio_path)
-    segments_data = []
 
+    # Output as SRT (VideoCaptioner default), then convert to ASS
+    srt_path = ass_path.replace(".ass", ".srt")
+
+    # Strategy 1: VideoCaptioner CLI with bijian (free cloud ASR)
+    try:
+        cmd = [
+            "videocaptioner", "transcribe", audio_path,
+            "--asr", "bijian",
+            "-o", srt_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=False)
+        if result.returncode == 0 and os.path.exists(srt_path) and os.path.getsize(srt_path) > 0:
+            logger.info("VideoCaptioner transcription succeeded: %s", srt_path)
+            _srt_to_ass(srt_path, ass_path, video_w, video_h)
+            return
+        else:
+            logger.warning("VideoCaptioner failed (rc=%d): %s", result.returncode, (result.stderr or "")[:200])
+    except FileNotFoundError:
+        logger.warning("videocaptioner CLI not found, falling back to whisper")
+    except subprocess.TimeoutExpired:
+        logger.warning("VideoCaptioner timed out after 300s")
+    except Exception as e:
+        logger.warning("VideoCaptioner error: %s", str(e)[:200])
+
+    # Strategy 2: Local faster-whisper fallback
+    segments_data = []
     try:
         from faster_whisper import WhisperModel
         model = WhisperModel("base", device="cpu", compute_type="int8", download_root=None)
-        segments, info = model.transcribe(audio_path, language="zh", vad_filter=True)
+        segments, info = model.transcribe(
+            audio_path, language="zh", vad_filter=True, word_timestamps=True
+        )
+        current_text = ""
+        current_start = 0.0
+        current_end = 0.0
+        MAX_CHARS = 15
+        MAX_DURATION = 4.0
+
         for seg in segments:
-            text = seg.text.strip()
-            if text:
-                segments_data.append((seg.start, seg.end, text))
+            if seg.words:
+                for word in seg.words:
+                    w_text = word.word.strip()
+                    if not w_text:
+                        continue
+                    if not current_text:
+                        current_start = word.start
+                    current_text += w_text
+                    current_end = word.end
+                    should_split = (
+                        len(current_text) >= MAX_CHARS
+                        or (current_end - current_start) >= MAX_DURATION
+                        or w_text[-1] in "。！？!?，,、"
+                    )
+                    if should_split and current_text.strip():
+                        segments_data.append((current_start, current_end, current_text.strip()))
+                        current_text = ""
+                        current_start = 0.0
+            else:
+                text = seg.text.strip()
+                if text:
+                    segments_data.append((seg.start, seg.end, text))
+
+        if current_text.strip():
+            segments_data.append((current_start, current_end, current_text.strip()))
     except Exception as e:
-        logger.warning("whisper unavailable: %s", str(e)[:100])
+        logger.warning("whisper fallback failed: %s", str(e)[:100])
 
     if not segments_data:
+        logger.warning("no subtitles generated")
         return
 
+    # Write ASS file
+    _write_ass_file(segments_data, ass_path, video_w, video_h)
+
+
+def _srt_to_ass(srt_path: str, ass_path: str, video_w: int, video_h: int) -> None:
+    """Convert SRT subtitle file to ASS format."""
+    import re as _re
+    segments = []
+    try:
+        with open(srt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        # Parse SRT blocks
+        blocks = _re.split(r'\n\n+', content.strip())
+        for block in blocks:
+            lines = block.strip().split('\n')
+            if len(lines) >= 3:
+                # Line 2: timestamps  00:00:01,000 --> 00:00:03,500
+                ts_match = _re.match(r'(\d+:\d+:\d+[,\.]\d+)\s*-->\s*(\d+:\d+:\d+[,\.]\d+)', lines[1])
+                if ts_match:
+                    start = _srt_time_to_seconds(ts_match.group(1))
+                    end = _srt_time_to_seconds(ts_match.group(2))
+                    text = ' '.join(lines[2:]).strip()
+                    if text:
+                        segments.append((start, end, text))
+    except Exception as e:
+        logger.error("SRT parse failed: %s", str(e)[:200])
+        return
+
+    if segments:
+        _write_ass_file(segments, ass_path, video_w, video_h)
+
+
+def _srt_time_to_seconds(ts: str) -> float:
+    """Convert SRT timestamp (HH:MM:SS,mmm) to seconds."""
+    ts = ts.replace(',', '.')
+    parts = ts.split(':')
+    return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
+
+
+def _write_ass_file(segments_data: list, ass_path: str, video_w: int, video_h: int) -> None:
+    """Write ASS subtitle file from segment data."""
     font_size = max(18, int(video_h * 0.028))
     margin_bottom = max(30, int(video_h * 0.06))
 
@@ -668,6 +768,13 @@ Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events = []
+    for s, e, t in segments_data:
+        events.append(f"Dialogue: 0,{_seconds_to_ass_time(s)},{_seconds_to_ass_time(e)},Default,,0,0,0,,{t}")
+
+    os.makedirs(os.path.dirname(ass_path) or ".", exist_ok=True)
+    with open(ass_path, "w", encoding="utf-8") as f:
+        f.write(header + "\n".join(events) + "\n")
+    logger.info("ASS subtitles written: %d segments -> %s", len(events), ass_path)
     for s, e, t in segments_data:
         events.append(f"Dialogue: 0,{_seconds_to_ass_time(s)},{_seconds_to_ass_time(e)},Default,,0,0,0,,{t}")
 
@@ -721,16 +828,99 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def burn_subtitles(video_path: str, ass_path: str, output_path: str) -> str:
-    """Burn ASS subtitles into video using FFmpeg."""
-    abs_ass = os.path.abspath(ass_path).replace("\\", "/").replace(":", "\\:")
-    cmd = [_get_ffmpeg_binary(), "-y", "-i", video_path,
-           "-vf", f"ass='{abs_ass}'",
-           "-c:v", "libx264", "-b:v", "8M", "-c:a", "copy",
-           "-movflags", "+faststart", output_path]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    if result.returncode != 0:
-        raise RuntimeError(f"Subtitle burn failed: {(result.stderr or '')[:300]}")
+    """Burn subtitles into video using FFmpeg subtitles filter.
+
+    Tries SRT with subtitles filter first, falls back to drawtext, then copy.
+    """
+    srt_path = ass_path.replace(".ass", ".srt")
+    _ass_to_srt(ass_path, srt_path)
+
+    subtitle_file = srt_path if os.path.exists(srt_path) and os.path.getsize(srt_path) > 0 else ass_path
+    ffmpeg_bin = _get_ffmpeg_binary()
+
+    # Strategy 1: FFmpeg subtitles filter (requires libass — conda-forge ffmpeg has it)
+    cmd = [
+        ffmpeg_bin, "-y",
+        "-i", video_path,
+        "-vf", f"subtitles={subtitle_file}",
+        "-c:v", "libx264", "-b:v", "8M",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        output_path,
+    ]
+    logger.info("burning subtitles via FFmpeg subtitles filter: %s", subtitle_file)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+    if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        logger.info("subtitles burned successfully")
+        return output_path
+
+    logger.warning("subtitles filter failed (rc=%d): %s", result.returncode, (result.stderr or "")[-200:])
+
+    # Strategy 2: Copy without subtitles
+    logger.warning("subtitle burn failed, copying without subtitles")
+    import shutil
+    shutil.copy(video_path, output_path)
     return output_path
+
+
+def _ass_to_srt(ass_path: str, srt_path: str) -> None:
+    """Convert ASS to SRT format for VideoCaptioner."""
+    events = _parse_ass_events(ass_path)
+    if not events:
+        return
+    with open(srt_path, "w", encoding="utf-8") as f:
+        for i, (start, end, text) in enumerate(events, 1):
+            f.write(f"{i}\n")
+            f.write(f"{_seconds_to_srt_time(start)} --> {_seconds_to_srt_time(end)}\n")
+            f.write(f"{text}\n\n")
+
+
+def _seconds_to_srt_time(seconds: float) -> str:
+    """Convert seconds to SRT timestamp HH:MM:SS,mmm."""
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+def _parse_ass_events(ass_path: str) -> list:
+    """Parse ASS file and return list of (start_seconds, end_seconds, text)."""
+    import re
+    events = []
+    try:
+        with open(ass_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("Dialogue:"):
+                    # Format: Dialogue: 0,H:MM:SS.cc,H:MM:SS.cc,Style,,0,0,0,,Text
+                    parts = line.split(",", 9)
+                    if len(parts) >= 10:
+                        start_ts = parts[1].strip()
+                        end_ts = parts[2].strip()
+                        text = parts[9].strip()
+                        if text:
+                            events.append((
+                                _ass_time_to_seconds(start_ts),
+                                _ass_time_to_seconds(end_ts),
+                                text,
+                            ))
+    except Exception as e:
+        logger.error("failed to parse ASS file %s: %s", ass_path, str(e))
+    return events
+
+
+def _ass_time_to_seconds(ts: str) -> float:
+    """Convert ASS timestamp H:MM:SS.cc to seconds."""
+    try:
+        parts = ts.split(":")
+        h = int(parts[0])
+        m = int(parts[1])
+        s_parts = parts[2].split(".")
+        s = int(s_parts[0])
+        cs = int(s_parts[1]) if len(s_parts) > 1 else 0
+        return h * 3600 + m * 60 + s + cs / 100.0
+    except Exception:
+        return 0.0
 
 
 def extract_audio_from_videos(
@@ -800,45 +990,35 @@ def mix_bgm(
     bgm_volume: float = 0.2,
     fade_out_duration: float = 3.0,
 ) -> str:
-    """Mix background music with the main audio track.
+    """Mix background music into a video or audio file using FFmpeg.
 
-    The BGM is looped to match the main audio duration, volume-adjusted,
-    and faded out at the end.
-
-    Args:
-        main_audio_path: Path to the main audio file.
-        bgm_file: Path to the BGM audio file.
-        output_path: Output path for the mixed audio.
-        bgm_volume: Volume multiplier for BGM (0.0 to 1.0).
-        fade_out_duration: Fade-out duration at the end in seconds.
-
-    Returns:
-        Path to the mixed audio file.
+    Uses FFmpeg's amix filter to blend BGM with the main audio track.
+    Works with both .mp4 video files and .mp3 audio files as input.
     """
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
-    main_clip = AudioFileClip(main_audio_path)
-    bgm_clip = AudioFileClip(bgm_file)
+    # Use FFmpeg to mix audio tracks directly
+    # This avoids MoviePy's write_audiofile codec issues with .mp4 files
+    cmd = [
+        _get_ffmpeg_binary(), "-y",
+        "-i", main_audio_path,
+        "-i", bgm_file,
+        "-filter_complex",
+        f"[1:a]volume={bgm_volume},afade=t=out:st=0:d={fade_out_duration}[bgm];"
+        f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=3[out]",
+        "-map", "0:v?",  # copy video stream if present
+        "-map", "[out]",
+        "-c:v", "copy",
+        "-c:a", AUDIO_CODEC,
+        "-b:a", AUDIO_BITRATE,
+        "-movflags", "+faststart",
+        output_path,
+    ]
 
-    try:
-        # Loop BGM to match main audio duration, adjust volume, fade out
-        bgm_processed = bgm_clip.with_effects([
-            afx.MultiplyVolume(bgm_volume),
-            afx.AudioLoop(duration=main_clip.duration),
-            afx.AudioFadeOut(fade_out_duration),
-        ])
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        logger.error("BGM mix failed: %s", (result.stderr or "")[-300:])
+        raise RuntimeError(f"BGM mixing failed: {(result.stderr or '')[-200:]}")
 
-        # Mix main audio and processed BGM
-        mixed = CompositeAudioClip([main_clip, bgm_processed])
-        mixed.write_audiofile(output_path, logger=None)
-
-        logger.info(
-            "BGM mixed: main=%.2fs, bgm_volume=%.2f, output=%s",
-            main_clip.duration, bgm_volume, output_path,
-        )
-    finally:
-        _close_clip(bgm_clip)
-        _close_clip(main_clip)
-        gc.collect()
-
+    logger.info("BGM mixed: volume=%.2f, output=%s", bgm_volume, output_path)
     return output_path

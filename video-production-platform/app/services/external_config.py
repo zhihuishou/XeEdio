@@ -154,7 +154,16 @@ class ExternalConfig:
     def get_ai_tts_config(self) -> dict:
         """Get AI TTS configuration with fallback settings."""
         return {
-            "api_url": self.get("ai_tts.api_url", ""),
+            "provider": self.get("ai_tts.provider", ""),
             "api_key": self.get("ai_tts.api_key", ""),
+            "api_url": self.get("ai_tts.api_url", ""),
+            "model": self.get("ai_tts.model", "cosyvoice-v2"),
+            "voice": self.get("ai_tts.voice", "longxiaochun_v2"),
             "fallback_to_edge_tts": self.get("ai_tts.fallback_to_edge_tts", True),
+        }
+
+    def get_pexels_config(self) -> dict:
+        """Get Pexels API configuration."""
+        return {
+            "api_key": self.get("pexels.api_key", ""),
         }

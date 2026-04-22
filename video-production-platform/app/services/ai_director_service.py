@@ -62,29 +62,22 @@ class AIDirectorService:
         transition: str = "none",
         audio_file: Optional[str] = None,
         progress_callback: Optional[Callable[[str], None]] = None,
+        director_prompt: str = "",
     ) -> tuple[str, bool]:
-        """Run the full AI Director pipeline.
-
-        Steps:
-        1. Extract frames from A-roll
-        2. Send to VLM for timeline generation
-        3. Execute timeline (or fallback to blind-cut)
-
-        Args:
-            a_roll_paths: A-roll video file paths.
-            b_roll_paths: B-roll video file paths.
-            transcript: Audio transcript or script text.
-            aspect_ratio: Target aspect ratio.
-            transition: Transition effect for B-roll.
-            audio_file: Audio track to apply to final output.
-            progress_callback: Callable(stage: str) for status updates.
-
-        Returns:
-            Tuple of (output_video_path, ai_director_used).
-        """
+        """Run the full AI Director pipeline."""
         output_path = os.path.join(self.output_dir, "output-1.mp4")
+        log = self._task_log
 
-        # Step 1: Extract frames from first A-roll
+        log("=" * 60)
+        log(f"AI Director Pipeline Start — task={self.task_id}")
+        log(f"A-roll: {len(a_roll_paths)} files: {a_roll_paths}")
+        if director_prompt:
+            log(f"Director prompt: {director_prompt}")
+        log(f"B-roll: {len(b_roll_paths)} files: {b_roll_paths}")
+        log(f"Transcript length: {len(transcript)} chars")
+        log(f"Aspect: {aspect_ratio}, Transition: {transition}")
+
+        # Step 1: Extract frames
         if progress_callback:
             progress_callback("extracting_frames")
 
@@ -95,8 +88,9 @@ class AIDirectorService:
                 frame_interval=vlm_config.get("frame_interval", 2),
                 max_frames=vlm_config.get("max_frames", 30),
             )
+            log(f"Step 1: Extracted {len(frames)} frames from A-roll")
         except Exception as e:
-            logger.warning("Frame extraction failed: %s", str(e)[:200])
+            log(f"Step 1: Frame extraction FAILED: {str(e)[:300]}")
             frames = []
 
         # Step 2: Generate timeline via VLM
@@ -105,31 +99,43 @@ class AIDirectorService:
 
         timeline = None
         if frames:
-            # Get A-roll total duration
             a_roll_duration = sum(_get_video_duration(p) for p in a_roll_paths)
-
-            # Build B-roll descriptions
             b_roll_descs = [
-                {
-                    "filename": os.path.basename(p),
-                    "duration": _get_video_duration(p),
-                }
+                {"filename": os.path.basename(p), "duration": _get_video_duration(p)}
                 for p in b_roll_paths
             ]
+            log(f"Step 2: Sending {len(frames)} frames + {len(b_roll_descs)} B-roll descs to VLM")
+            log(f"  A-roll duration: {a_roll_duration:.1f}s")
+            log(f"  B-roll descs: {b_roll_descs}")
 
             try:
                 timeline = self.vlm_service.generate_timeline(
-                    frames, transcript, b_roll_descs, a_roll_duration
+                    frames, transcript, b_roll_descs, a_roll_duration,
+                    user_prompt=director_prompt,
                 )
+                if timeline:
+                    log(f"Step 2: VLM returned {len(timeline)} timeline entries:")
+                    for i, entry in enumerate(timeline):
+                        log(f"  [{i}] {entry.get('type')} {entry.get('start')}-{entry.get('end')}s: {entry.get('reason','')[:80]}")
+                    # Check if any B-roll entries exist
+                    b_count = sum(1 for e in timeline if e.get("type") == "b_roll")
+                    log(f"  → A-roll entries: {len(timeline) - b_count}, B-roll entries: {b_count}")
+                    if b_count == 0:
+                        log("  ⚠️ WARNING: VLM returned NO B-roll entries! All A-roll.")
+                else:
+                    log("Step 2: VLM returned None (failed or invalid)")
             except Exception as e:
-                logger.warning("VLM timeline generation failed: %s", str(e)[:200])
+                log(f"Step 2: VLM FAILED: {str(e)[:300]}")
                 timeline = None
+        else:
+            log("Step 2: SKIPPED (no frames extracted)")
 
         # Step 3: Execute
         if timeline:
             if progress_callback:
                 progress_callback("executing_timeline")
 
+            log(f"Step 3: Executing timeline with {len(timeline)} entries")
             execute_timeline(
                 timeline,
                 a_roll_paths,
@@ -139,15 +145,14 @@ class AIDirectorService:
                 aspect_ratio,
                 transition,
             )
-            return output_path, True  # (path, ai_director_used)
+            log(f"Step 3: Timeline execution COMPLETE → {output_path}")
+            log("=" * 60)
+            return output_path, True
         else:
             if progress_callback:
                 progress_callback("falling_back_to_blind_cut")
 
-            logger.warning(
-                "VLM timeline unavailable for task %s, falling back to blind-cut",
-                self.task_id,
-            )
+            log("Step 3: FALLBACK to blind-cut (no valid timeline)")
             combine_videos(
                 output_path,
                 [],
@@ -158,7 +163,21 @@ class AIDirectorService:
                 a_roll_paths=a_roll_paths,
                 b_roll_paths=b_roll_paths,
             )
+            log("Step 3: Blind-cut fallback COMPLETE")
+            log("=" * 60)
             return output_path, False
+
+    def _task_log(self, message: str) -> None:
+        """Write a log line to the task-specific log file."""
+        from datetime import datetime, timezone
+        log_path = os.path.join(self.output_dir, "ai_director.log")
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] {message}\n")
+        except Exception:
+            pass
+        logger.info("[task %s] %s", self.task_id, message)
 
     def _transcribe_audio(self, audio_path: str) -> str:
         """Transcribe audio using Whisper ASR.

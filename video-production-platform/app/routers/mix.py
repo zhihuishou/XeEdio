@@ -229,6 +229,36 @@ def generate_keywords(
     return KeywordGenerateResponse(keywords=keywords)
 
 
+# ------------------------------------------------------------------
+# Voice list and preview
+# ------------------------------------------------------------------
+
+VOICE_LIST = [
+    {"id": "longyan_v2", "name": "妍妍", "gender": "女"},
+    {"id": "longyingtian", "name": "甜甜", "gender": "女"},
+    {"id": "longxiaoxia_v2", "name": "夏夏", "gender": "女"},
+    {"id": "longxiaochun_v2", "name": "小春", "gender": "女"},
+    {"id": "longmiao_v2", "name": "喵喵", "gender": "女"},
+    {"id": "longhua_v2", "name": "华华", "gender": "女"},
+    {"id": "longxiaobai_v2", "name": "小白", "gender": "女"},
+    {"id": "longshu_v2", "name": "舒舒", "gender": "男"},
+]
+
+
+@router.get("/voices")
+def get_voice_list(
+    _current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    """Get available AI TTS voice list with preview URLs."""
+    voices = []
+    for v in VOICE_LIST:
+        voices.append({
+            **v,
+            "preview_url": f"/static/voice_previews/{v['id']}.mp3",
+        })
+    return {"voices": voices}
+
+
 def _parse_keywords(content: str) -> list[str]:
     """Parse keywords from LLM response content.
 

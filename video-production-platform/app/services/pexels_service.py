@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.database import Asset, generate_uuid, utcnow
 from app.services.config_service import ConfigService
+from app.services.external_config import ExternalConfig
 from app.utils.errors import AppError, ErrorCode, ValidationError
 
 logger = logging.getLogger("app.pexels_service")
@@ -39,6 +40,7 @@ class PexelsService:
     def __init__(self, db: Session):
         self.db = db
         self.config = ConfigService.get_instance()
+        self.ext_config = ExternalConfig.get_instance()
 
     # ------------------------------------------------------------------
     # 5.1  search_videos
@@ -64,11 +66,14 @@ class PexelsService:
             ValidationError: If Pexels API key is not configured.
             AppError: If Pexels API call fails.
         """
-        api_key = self.config.get_config("pexels_api_key", self.db)
+        api_key = self.ext_config.get_pexels_config().get("api_key", "")
+        if not api_key:
+            # Fallback: try DB config for backward compatibility
+            api_key = self.config.get_config("pexels_api_key", self.db, "")
         if not api_key:
             raise ValidationError(
-                message="Pexels API Key 未配置，请在管理后台设置",
-                details={"config_key": "pexels_api_key"},
+                message="Pexels API Key 未配置，请在 config.yaml 中设置",
+                details={"config_key": "pexels.api_key"},
             )
 
         orientation = ASPECT_RATIO_TO_ORIENTATION.get(aspect_ratio, "portrait")

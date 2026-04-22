@@ -13,8 +13,9 @@ class MixCreateRequest(BaseModel):
     """Request body for creating a mix task."""
 
     topic: str = Field(..., min_length=1, max_length=200, description="视频主题")
-    a_roll_asset_ids: list[str] = Field(default=[], description="A-Roll 素材 ID 列表")
-    b_roll_asset_ids: list[str] = Field(default=[], description="B-Roll 素材 ID 列表（可选）")
+    a_roll_asset_ids: list[str] = Field(default=[], description="A-Roll 素材 ID（模式1/2）")
+    b_roll_asset_ids: list[str] = Field(default=[], description="B-Roll 素材 ID（模式1/2）")
+    asset_ids: list[str] = Field(default=[], description="素材 ID 列表（模式3：纯素材，不分 A/B）")
     aspect_ratio: str = Field(
         default="9:16",
         pattern=r"^(16:9|9:16|1:1)$",
@@ -32,11 +33,13 @@ class MixCreateRequest(BaseModel):
         description="拼接模式：random | sequential",
     )
     video_count: int = Field(default=1, ge=1, le=5, description="输出视频数量")
+    max_output_duration: int = Field(default=60, ge=15, le=300, description="每段输出视频最大时长（秒）")
     tts_text: Optional[str] = Field(default=None, description="TTS 配音文本（可选）")
     tts_voice: Optional[str] = Field(default=None, description="TTS 语音角色（可选）")
     bgm_enabled: bool = Field(default=False, description="是否启用背景音乐")
     bgm_asset_id: Optional[str] = Field(default=None, description="BGM 素材 ID（None 表示随机）")
     bgm_volume: float = Field(default=0.2, ge=0.0, le=1.0, description="BGM 音量比例")
+    director_prompt: Optional[str] = Field(default=None, max_length=500, description="AI 编导自定义指令（可选）")
     mixing_mode: str = Field(
         default="pure_mix",
         pattern=r"^(pure_mix|mix_with_script|broll_voiceover)$",

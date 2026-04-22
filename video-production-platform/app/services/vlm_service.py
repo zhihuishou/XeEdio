@@ -155,6 +155,7 @@ class VLMService:
         transcript: str,
         b_roll_descriptions: list[dict],
         a_roll_duration: float,
+        user_prompt: str = "",
     ) -> list[dict] | None:
         """Send frames to VLM API and get editing timeline.
 
@@ -185,10 +186,15 @@ class VLMService:
             frames, transcript, b_roll_descriptions, a_roll_duration
         )
 
+        # Build system prompt with optional user directives
+        system_prompt = VLM_SYSTEM_PROMPT
+        if user_prompt and user_prompt.strip():
+            system_prompt += f"\n\nAdditional director instructions from the user:\n{user_prompt.strip()}"
+
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": VLM_SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
             "max_tokens": 4096,
