@@ -13,15 +13,20 @@ import random
 import threading
 from typing import Optional
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.models.database import Asset, Task, TaskAsset, SessionLocal, generate_uuid, utcnow
 from app.services import mixing_engine
 from app.services.config_service import ConfigService
-from app.services.task_service import transition_state
-from app.utils.errors import NotFoundError, ValidationError
+from app.services.task_service import transition_state, VALID_TRANSITIONS
+from app.utils.errors import NotFoundError, StateTransitionError, ValidationError
 
 logger = logging.getLogger("app.mixing_service")
+
+# Concurrency control: limit the number of simultaneous mixing tasks
+_MAX_CONCURRENT_MIX = 3
+_mix_semaphore = threading.Semaphore(_MAX_CONCURRENT_MIX)
 
 
 class MixingService:
@@ -138,6 +143,22 @@ class MixingService:
         - mix_with_script: TTS audio + AI Director + script subtitles
         - broll_voiceover: TTS audio + blind-cut B-roll + script subtitles
         """
+        acquired = _mix_semaphore.acquire(timeout=300)  # Wait up to 5 min
+        if not acquired:
+            db = SessionLocal()
+            try:
+                task = db.query(Task).filter(Task.id == task_id).first()
+                if task:
+                    task.status = "failed"
+                    task.error_message = "服务器繁忙，并发混剪任务过多，请稍后重试"
+                    task.updated_at = utcnow()
+                    db.commit()
+            except Exception:
+                logger.exception("failed to mark task %s as failed after semaphore timeout", task_id)
+            finally:
+                db.close()
+            return
+
         db = SessionLocal()
         try:
             task = db.query(Task).filter(Task.id == task_id).first()
@@ -419,6 +440,7 @@ class MixingService:
                 logger.exception("failed to update task %s status to failed", task_id)
         finally:
             db.close()
+            _mix_semaphore.release()
 
     # ------------------------------------------------------------------
     # 4.3  get_status
@@ -473,6 +495,8 @@ class MixingService:
     def submit_review(self, task_id: str) -> Task:
         """Submit a completed mixing task for review.
 
+        Uses an atomic UPDATE with WHERE clause to prevent race conditions.
+
         Args:
             task_id: The task ID.
 
@@ -481,19 +505,24 @@ class MixingService:
 
         Raises:
             NotFoundError: If the task does not exist.
-            ValidationError: If the task is not in video_done status.
+            StateTransitionError: If the task is not in video_done status.
         """
         task = self.db.query(Task).filter(Task.id == task_id).first()
         if not task:
             raise NotFoundError(message=f"任务不存在: {task_id}")
 
-        if task.status != "video_done":
-            raise ValidationError(
+        # Atomic state transition: only update if current status matches expected
+        result = self.db.execute(
+            update(Task)
+            .where(Task.id == task_id, Task.status == "video_done")
+            .values(status="pending_review", updated_at=utcnow())
+        )
+        if result.rowcount == 0:
+            raise StateTransitionError(
                 message=f"只有状态为 video_done 的任务才能提交审核，当前状态: {task.status}",
                 details={"current_status": task.status},
             )
 
-        transition_state(task, "pending_review")
         self.db.commit()
         self.db.refresh(task)
         return task
@@ -505,6 +534,8 @@ class MixingService:
     def retry(self, task_id: str) -> Task:
         """Retry a failed or rejected mixing task.
 
+        Uses an atomic UPDATE with WHERE clause to prevent race conditions.
+
         Args:
             task_id: The task ID.
 
@@ -513,20 +544,24 @@ class MixingService:
 
         Raises:
             NotFoundError: If the task does not exist.
-            ValidationError: If the task is not in failed or rejected status.
+            StateTransitionError: If the task is not in failed or rejected status.
         """
         task = self.db.query(Task).filter(Task.id == task_id).first()
         if not task:
             raise NotFoundError(message=f"任务不存在: {task_id}")
 
-        if task.status not in ("failed", "rejected"):
-            raise ValidationError(
+        # Atomic state transition: only update if current status is failed or rejected
+        result = self.db.execute(
+            update(Task)
+            .where(Task.id == task_id, Task.status.in_(["failed", "rejected"]))
+            .values(status="processing", error_message=None, updated_at=utcnow())
+        )
+        if result.rowcount == 0:
+            raise StateTransitionError(
                 message=f"只有状态为 failed 或 rejected 的任务才能重试，当前状态: {task.status}",
                 details={"current_status": task.status},
             )
 
-        transition_state(task, "processing")
-        task.error_message = None
         self.db.commit()
         self.db.refresh(task)
 
