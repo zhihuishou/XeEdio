@@ -45,6 +45,13 @@ storage/synthesized/*
 .env
 .env.*
 
+# Config files with real API keys (keep templates only)
+# config.yaml is the clean template committed to repo
+# config.dev.yaml / config.test.yaml / config.aix.yaml contain real keys — do NOT commit
+config.dev.yaml
+config.test.yaml
+config.aix.yaml
+
 # Testing
 tests/e2e/__pycache__/
 *.png

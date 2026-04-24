@@ -1,58 +1,57 @@
-# 视频生产平台配置文件
-# MVP 阶段：直接配置 API Key
-# 未来：替换为自建 API Gateway 地址，由 Go 服务处理计费
+# ============================================================
+# 默认配置文件（模板）
+# 实际使用请通过 APP_ENV 环境变量选择对应配置：
+#   APP_ENV=dev   → config.dev.yaml
+#   APP_ENV=test  → config.test.yaml
+#   APP_ENV=aix   → config.aix.yaml
+# 如果未设置 APP_ENV，则加载此文件作为 fallback
+# ============================================================
+
+app:
+  env: dev
+  debug: true
+  log_level: DEBUG
 
 llm:
-  # 模型提供商配置
   providers:
     deepseek:
       name: "DeepSeek"
       api_url: "https://api.deepseek.com/v1/chat/completions"
-      api_key: ""  # 填写你的 API Key
+      api_key: ""
       model: "deepseek-chat"
       key_hint: "从 platform.deepseek.com 获取"
-    
+
     doubao:
       name: "doubao-pro"
       api_url: "https://ark.cn-beijing.volces.com/api/v3/chat/completions"
-      api_key: ""  # 填写你的 API Key
+      api_key: ""
       model: "doubao-pro-32k"
       key_hint: "从火山引擎控制台获取"
-    
+
     gpt-4o-mini:
       name: "gpt-4o-mini"
       api_url: "https://api.luxee.ai/v1/chat/completions"
-      api_key: "sk-8cee9cb9147b553008798bd2ace636dc8e50363d8f676a742a0535034bdcaece"
+      api_key: ""
       model: "gpt-5.4"
       key_hint: "从 platform.openai.com 获取"
 
-  # 默认使用的模型
   default_provider: "gpt-4o-mini"
 
-  # 未来：替换为自建 API Gateway（Go 服务）
-  # gateway_url: "http://localhost:8080/api/v1/llm"
-  # gateway_enabled: false
-
-# VLM 多模态视觉模型（AI 编导核心）
 vlm:
   api_url: "https://api.luxee.ai/v1/chat/completions"
-  api_key: "sk-8cee9cb9147b553008798bd2ace636dc8e50363d8f676a742a0535034bdcaece"
+  api_key: ""
   model: "gpt-5.4"
-  # 抽帧间隔（秒），每隔多少秒从 A-roll 抽取一帧送给 VLM 分析
   frame_interval: 2
-  # 最大抽帧数（控制 token 消耗）
   max_frames: 30
 
-# AI 口播 TTS API（阿里云百炼 CosyVoice）
 ai_tts:
-  provider: "dashscope"  # dashscope = 阿里云百炼
-  api_key: "sk-92ae3f703c814454a5537ab42c860f3d"
+  provider: "dashscope"
+  api_key: ""
   model: "cosyvoice-v2"
-  voice: "longyingtian"  # 甜甜（默认音色）
+  voice: "longyingtian"
   fallback_to_edge_tts: true
 
 tts:
-  # Edge-TTS 配置（免费）
   voices: "zh-CN-XiaoxiaoNeural,zh-CN-YunxiNeural"
   speed: "+0%"
   volume: "+0%"
@@ -69,6 +68,5 @@ upload:
 batch:
   max_concurrency: 3
 
-# Pexels 免费商用视频素材 API
 pexels:
-  api_key: "P6KSrRWsl3RgerXTOpfkJE3LuwTyQBJt13xvXvWShyWJRjn8H3MOfoWB"  # 从 www.pexels.com/api 获取
+  api_key: "P6KSrRWsl3RgerXTOpfkJE3LuwTyQBJt13xvXvWShyWJRjn8H3MOfoWB"

@@ -42,9 +42,10 @@ class MixCreateRequest(BaseModel):
     director_prompt: Optional[str] = Field(default=None, max_length=500, description="AI 编导自定义指令（可选）")
     mixing_mode: str = Field(
         default="pure_mix",
-        pattern=r"^(pure_mix|mix_with_script|broll_voiceover)$",
-        description="混剪模式：pure_mix | mix_with_script | broll_voiceover",
+        pattern=r"^(pure_mix|mix_with_script|broll_voiceover|montage)$",
+        description="混剪模式：pure_mix | mix_with_script | broll_voiceover | montage",
     )
+    subtitle_enabled: bool = Field(default=False, description="是否开启字幕（需先启用 TTS）")
 
 
 class MixCreateResponse(BaseModel):

@@ -391,50 +391,60 @@ def combine_videos(
         except Exception as e:
             logger.error("failed to process clip: %s", str(e))
 
-    # Loop processed clips if video is still shorter than audio
-    if video_duration < audio_duration:
-        logger.warning(
-            "video duration (%.2fs) < audio duration (%.2fs), looping clips",
-            video_duration, audio_duration,
-        )
-        base_clips = processed_clips.copy()
-        for clip_item in itertools.cycle(base_clips):
-            if video_duration >= audio_duration:
-                break
-            processed_clips.append(clip_item)
-            video_duration += clip_item.duration
-        logger.info(
-            "after looping: video=%.2fs, audio=%.2fs, looped %d clips",
-            video_duration, audio_duration,
-            len(processed_clips) - len(base_clips),
-        )
-
-    # 6. Merge with FFmpeg concat demuxer
+    # --- Step 5: Concat video segments + merge audio ---
     logger.info("starting clip merging process")
-    if not processed_clips:
+    if not temp_files:
         logger.warning("no clips available for merging")
         return combined_video_path
 
-    if len(processed_clips) == 1:
-        logger.info("using single clip directly")
-        import shutil
-        shutil.copy(processed_clips[0].file_path, combined_video_path)
-        _delete_files([processed_clips[0].file_path])
-        logger.info("video combining completed")
-        return combined_video_path
+    if len(temp_files) == 1:
+        # Single segment — just merge with audio
+        video_only = temp_files[0]
+    else:
+        # Concat all segments
+        video_only = os.path.join(output_dir, "combine-video-only.mp4")
+        _concat_video_clips_with_ffmpeg(
+            clip_files=temp_files,
+            output_file=video_only,
+            threads=threads,
+            output_dir=output_dir,
+        )
 
-    clip_files = [c.file_path for c in processed_clips]
-    logger.info("concatenating %d clips with ffmpeg", len(clip_files))
-    _concat_video_clips_with_ffmpeg(
-        clip_files=clip_files,
-        output_file=combined_video_path,
-        threads=threads,
-        output_dir=output_dir,
-    )
+    # Merge with audio track
+    if audio_file and os.path.exists(audio_file):
+        final_tmp = os.path.join(output_dir, "combine-with-audio.mp4")
+        cmd = [
+            _get_ffmpeg_binary(), "-y",
+            "-i", video_only,
+            "-i", audio_file,
+            "-c:v", "copy",
+            "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+            "-shortest",
+            "-movflags", "+faststart",
+            final_tmp,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if result.returncode == 0 and os.path.exists(final_tmp):
+            import shutil as _shutil
+            _shutil.move(final_tmp, combined_video_path)
+        else:
+            logger.warning("audio merge failed (rc=%d), using video-only output", result.returncode)
+            if video_only != combined_video_path:
+                import shutil as _shutil
+                _shutil.move(video_only, combined_video_path)
+                video_only = None
+    else:
+        # No audio file — just use the video
+        if video_only != combined_video_path:
+            import shutil as _shutil
+            _shutil.move(video_only, combined_video_path)
+            video_only = None
 
-    # 7. Clean up temp files (deduplicate in case of looped references)
-    unique_temp_files = list(set(clip_files))
-    _delete_files(unique_temp_files)
+    # Clean up temp files
+    cleanup = list(set(temp_files))
+    if video_only and video_only != combined_video_path and os.path.exists(video_only):
+        cleanup.append(video_only)
+    _delete_files(cleanup)
 
     logger.info("mixing complete: %s", combined_video_path)
     return combined_video_path
@@ -559,6 +569,107 @@ def execute_timeline(
 
     _delete_files(temp_files + [video_only, concat_list])
     logger.info("timeline execution complete: %s", output_path)
+    return output_path
+
+
+def execute_montage_timeline(
+    timeline: list,
+    clip_paths: List[str],
+    audio_file: Optional[str],
+    output_path: str,
+    video_aspect: str = "9:16",
+    video_transition: str = "none",
+    threads: int = 2,
+) -> str:
+    """Execute a VLM-generated montage timeline to produce the final video.
+
+    Unlike execute_timeline which uses A-roll/B-roll, this treats all clips
+    equally and uses clip_index to reference source clips.
+
+    Args:
+        timeline: List of montage timeline entries with clip_index, source_start, source_end.
+        clip_paths: List of all clip file paths (indexed by clip_index).
+        audio_file: Optional audio file to merge (TTS or BGM). None for no audio.
+        output_path: Output video file path.
+        video_aspect: Target aspect ratio.
+        video_transition: Transition effect to apply between clips.
+        threads: FFmpeg thread count.
+
+    Returns:
+        Path to the output video file.
+    """
+    output_dir = os.path.dirname(output_path)
+    os.makedirs(output_dir, exist_ok=True)
+    target_w, target_h = ASPECT_RESOLUTIONS.get(video_aspect, (1080, 1920))
+
+    temp_files = []
+    for i, entry in enumerate(timeline):
+        clip_index = int(entry.get("clip_index", 0))
+        source_start = float(entry.get("source_start", 0))
+        source_end = float(entry.get("source_end", source_start + 1))
+        seg_dur = source_end - source_start
+
+        if seg_dur <= 0.05:
+            continue
+
+        if clip_index < 0 or clip_index >= len(clip_paths):
+            logger.warning("montage entry %d: clip_index %d out of range, skipping", i, clip_index)
+            continue
+
+        try:
+            src_clip = VideoFileClip(clip_paths[clip_index])
+            actual_end = min(source_end, src_clip.duration)
+            actual_start = min(source_start, src_clip.duration - 0.1)
+            if actual_end <= actual_start:
+                _close_clip(src_clip)
+                logger.warning("montage entry %d: source range invalid after clamping, skipping", i)
+                continue
+
+            clip = src_clip.subclipped(actual_start, actual_end)
+            clip = clip.without_audio()
+            clip = _resize_clip(clip, target_w, target_h)
+
+            if i > 0 and video_transition != "none":
+                clip = apply_transition(clip, video_transition)
+
+            temp_path = os.path.join(output_dir, f"montage-seg-{i:04d}.mp4")
+            clip.write_videofile(temp_path, logger=None, fps=FPS, codec=VIDEO_CODEC, audio=False)
+            temp_files.append(temp_path)
+            _close_clip(clip)
+        except Exception as e:
+            logger.error("montage segment %d (clip %d, %.2f-%.2f) failed: %s", i, clip_index, source_start, source_end, str(e))
+
+    if not temp_files:
+        raise RuntimeError("No montage segments rendered")
+
+    # Concat video segments
+    video_only = os.path.join(output_dir, "montage-video-only.mp4")
+    concat_list = os.path.join(output_dir, "montage-concat.txt")
+    with open(concat_list, "w") as f:
+        for tf in temp_files:
+            f.write(f"file '{os.path.abspath(tf)}'\n")
+
+    cmd = [_get_ffmpeg_binary(), "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+           "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p", "-an", video_only]
+    subprocess.run(cmd, capture_output=True, text=True, check=False)
+
+    # Merge with audio if provided
+    if audio_file and os.path.exists(audio_file):
+        cmd2 = [_get_ffmpeg_binary(), "-y", "-i", video_only, "-i", audio_file,
+                "-c:v", "copy", "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+                "-shortest", "-movflags", "+faststart", output_path]
+        subprocess.run(cmd2, capture_output=True, text=True, check=False)
+    else:
+        # No audio — just copy the video
+        import shutil as _shutil
+        _shutil.move(video_only, output_path)
+        video_only = None  # already moved
+
+    cleanup = temp_files + [concat_list]
+    if video_only and os.path.exists(video_only):
+        cleanup.append(video_only)
+    _delete_files(cleanup)
+    logger.info("montage timeline execution complete: %s", output_path)
     return output_path
 
 

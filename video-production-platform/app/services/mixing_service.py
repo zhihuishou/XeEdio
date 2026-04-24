@@ -62,9 +62,9 @@ class MixingService:
         if mixing_mode == "broll_voiceover":
             if not request.asset_ids:
                 raise ValidationError(message="纯素材模式需要至少一个素材")
-        if mixing_mode in ("mix_with_script", "broll_voiceover"):
-            if not request.tts_text or not request.tts_text.strip():
-                raise ValidationError(message="该模式需要提供配音文本")
+        if mixing_mode == "montage":
+            if not request.asset_ids:
+                raise ValidationError(message="素材混剪模式需要至少一个素材")
 
         # Validate all referenced assets exist
         all_asset_ids = set(request.a_roll_asset_ids + request.b_roll_asset_ids + request.asset_ids)
@@ -104,8 +104,8 @@ class MixingService:
         self.db.flush()
 
         # Save TaskAsset records based on mode
-        if mixing_mode == "broll_voiceover":
-            # Mode 3: all assets are equal, store as "asset" roll_type
+        if mixing_mode in ("broll_voiceover", "montage"):
+            # Mode 3/4: all assets are equal, store as "asset" roll_type
             for i, asset_id in enumerate(request.asset_ids):
                 ta = TaskAsset(id=generate_uuid(), task_id=task.id, asset_id=asset_id, roll_type="asset", sequence_order=i)
                 self.db.add(ta)
@@ -186,8 +186,8 @@ class MixingService:
             b_roll_paths = []
             all_asset_paths = []  # For mode 3
 
-            if mixing_mode == "broll_voiceover":
-                # Mode 3: all assets are equal
+            if mixing_mode in ("broll_voiceover", "montage"):
+                # Mode 3/4: all assets are equal
                 asset_records = (
                     db.query(TaskAsset)
                     .filter(TaskAsset.task_id == task_id, TaskAsset.roll_type == "asset")
@@ -321,39 +321,63 @@ class MixingService:
                             _shutil.copy(raw_output, version_output)
 
                 elif mixing_mode == "mix_with_script":
-                    # --- Mix + AI Script: TTS + AI Director ---
-                    from app.services.ai_tts_service import AITTSService
+                    # --- Mix + AI Script: TTS optional + AI Director ---
                     from app.services.ai_director_service import AIDirectorService
-                    ai_tts = AITTSService()
-                    audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+
+                    audio_file = None
+                    duration = None
+                    transcript = ""
+
+                    # TTS is optional — synthesize only if text provided
+                    if tts_text and tts_text.strip():
+                        from app.services.ai_tts_service import AITTSService
+                        ai_tts = AITTSService()
+                        audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+                        transcript = tts_text
+                        logger.info("mix_with_script: TTS audio generated (%.1fs)", duration)
+                    else:
+                        # No TTS — extract original A-roll audio and transcribe
+                        audio_file = os.path.join(output_dir, f"extracted_audio-{version}.mp3")
+                        mixing_engine.extract_audio_from_videos(seg_a_paths, audio_file)
+                        logger.info("mix_with_script: no TTS text, using A-roll audio")
 
                     ai_director = AIDirectorService(task_id, output_dir)
                     raw_output, ai_used = ai_director.run_pipeline(
-                        seg_a_paths, b_roll_paths, tts_text,
+                        seg_a_paths, b_roll_paths, transcript,
                         aspect_ratio=aspect_ratio, transition=transition, audio_file=audio_file,
                         director_prompt=director_prompt,
                     )
                     if ai_used:
                         ai_director_used = True
 
-                    # Script-based subtitles
-                    ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
-                    try:
-                        mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
-                        final_path = os.path.join(output_dir, f"final-{version}.mp4")
-                        mixing_engine.burn_subtitles(raw_output, ass_path, final_path)
-                        os.replace(final_path, version_output)
-                    except Exception as e:
-                        logger.warning("subtitle failed: %s", str(e)[:200])
+                    # Script-based subtitles only if TTS text was provided
+                    if tts_text and tts_text.strip() and duration:
+                        ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
+                        try:
+                            mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
+                            final_path = os.path.join(output_dir, f"final-{version}.mp4")
+                            mixing_engine.burn_subtitles(raw_output, ass_path, final_path)
+                            os.replace(final_path, version_output)
+                        except Exception as e:
+                            logger.warning("subtitle failed: %s", str(e)[:200])
+                            import shutil as _shutil
+                            if raw_output != version_output:
+                                _shutil.copy(raw_output, version_output)
+                    else:
                         import shutil as _shutil
                         if raw_output != version_output:
                             _shutil.copy(raw_output, version_output)
 
                 elif mixing_mode == "broll_voiceover":
-                    # --- Mode 3: Pure assets + AI Voiceover ---
-                    from app.services.ai_tts_service import AITTSService
-                    ai_tts = AITTSService()
-                    audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+                    # --- Mode 3: Pure assets, TTS optional ---
+                    audio_file = None
+                    duration = None
+
+                    if tts_text and tts_text.strip():
+                        from app.services.ai_tts_service import AITTSService
+                        ai_tts = AITTSService()
+                        audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+                        logger.info("broll_voiceover: TTS audio generated (%.1fs)", duration)
 
                     mixing_engine.combine_videos(
                         combined_video_path=version_output,
@@ -365,15 +389,60 @@ class MixingService:
                         max_clip_duration=clip_duration,
                     )
 
-                    # Script-based subtitles
-                    ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
-                    try:
-                        mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
-                        final_path = os.path.join(output_dir, f"final-{version}.mp4")
-                        mixing_engine.burn_subtitles(version_output, ass_path, final_path)
-                        os.replace(final_path, version_output)
-                    except Exception as e:
-                        logger.warning("subtitle failed: %s", str(e)[:200])
+                    # Script-based subtitles only if TTS text was provided
+                    if tts_text and tts_text.strip() and duration:
+                        ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
+                        try:
+                            mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
+                            final_path = os.path.join(output_dir, f"final-{version}.mp4")
+                            mixing_engine.burn_subtitles(version_output, ass_path, final_path)
+                            os.replace(final_path, version_output)
+                        except Exception as e:
+                            logger.warning("subtitle failed: %s", str(e)[:200])
+
+                elif mixing_mode == "montage":
+                    # --- Mode 4: Montage — AI-directed clip arrangement, TTS optional ---
+                    from app.services.ai_director_service import AIDirectorService
+
+                    audio_file = None
+                    duration = None
+
+                    # TTS is optional in montage mode
+                    if tts_text and tts_text.strip():
+                        from app.services.ai_tts_service import AITTSService
+                        ai_tts = AITTSService()
+                        audio_file, duration = ai_tts.synthesize(tts_text, task_id, tts_voice)
+                        logger.info("montage mode: TTS audio generated (%.1fs)", duration)
+
+                    ai_director = AIDirectorService(task_id, output_dir)
+                    raw_output, ai_used = ai_director.run_montage_pipeline(
+                        all_asset_paths,
+                        aspect_ratio=aspect_ratio,
+                        transition=transition,
+                        audio_file=audio_file,
+                        max_output_duration=max_output_duration,
+                        director_prompt=director_prompt,
+                    )
+                    if ai_used:
+                        ai_director_used = True
+
+                    # Subtitles only if TTS text was provided
+                    if tts_text and tts_text.strip() and duration:
+                        ass_path = os.path.join(output_dir, f"subtitles-{version}.ass")
+                        try:
+                            mixing_engine.generate_subtitles_from_script(tts_text, duration, ass_path, video_w, video_h)
+                            final_path = os.path.join(output_dir, f"final-{version}.mp4")
+                            mixing_engine.burn_subtitles(raw_output, ass_path, final_path)
+                            os.replace(final_path, version_output)
+                        except Exception as e:
+                            logger.warning("subtitle failed: %s", str(e)[:200])
+                            import shutil as _shutil
+                            if raw_output != version_output:
+                                _shutil.copy(raw_output, version_output)
+                    else:
+                        import shutil as _shutil
+                        if raw_output != version_output:
+                            _shutil.copy(raw_output, version_output)
 
                 else:
                     # Fallback: old blind-cut logic
