@@ -194,7 +194,7 @@
                             </svg>
                         </div>
                         <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'mix_with_script' ? 'text-violet-700' : 'text-slate-700'">混剪 + AI 口播</h4>
-                        <p class="text-xs text-slate-400 mt-1">A-Roll + B-Roll + AI 配音</p>
+                        <p class="text-xs text-slate-400 mt-1">A-Roll + B-Roll + AI 配音（可选）</p>
                     </div>
                 </div>
                 <div @click="params.mixing_mode = 'broll_voiceover'"
@@ -208,7 +208,7 @@
                             </svg>
                         </div>
                         <h4 class="text-sm font-semibold" :class="params.mixing_mode === 'broll_voiceover' ? 'text-violet-700' : 'text-slate-700'">纯素材 + AI 口播</h4>
-                        <p class="text-xs text-slate-400 mt-1">素材拼接 + AI 配音 + 字幕</p>
+                        <p class="text-xs text-slate-400 mt-1">素材拼接 + AI 配音（可选）+ 字幕</p>
                     </div>
                 </div>
             </div>
@@ -725,18 +725,16 @@
                                     d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                             </svg>
                             <h3 class="text-sm font-bold text-slate-900">TTS 配音</h3>
-                            <span x-show="params.mixing_mode === 'pure_mix'" class="text-xs text-slate-400">可选</span>
-                            <span x-show="params.mixing_mode !== 'pure_mix'" class="text-xs text-violet-500 font-medium">必填</span>
+                            <span class="text-xs text-slate-400">可选</span>
                         </div>
-                        <button x-show="params.mixing_mode === 'pure_mix'"
-                                @click="params.tts_enabled = !params.tts_enabled"
+                        <button @click="params.tts_enabled = !params.tts_enabled"
                                 class="relative w-11 h-6 rounded-full cursor-pointer transition-colors duration-300"
                                 :class="params.tts_enabled ? 'bg-violet-400' : 'bg-slate-200'">
                             <div class="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300"
                                 :class="params.tts_enabled ? 'translate-x-5' : ''"></div>
                         </button>
                     </div>
-                    <div x-show="params.mixing_mode !== 'pure_mix' || params.tts_enabled" x-transition class="mt-5 space-y-4">
+                    <div x-show="params.tts_enabled" x-transition class="mt-5 space-y-4">
                         <div>
                             <label for="mix-tts-text"
                                 class="text-xs font-medium text-slate-600 mb-1.5 block">配音文本</label>
@@ -1378,13 +1376,13 @@
                         this.showToast('请至少选择一个素材', 'warning');
                         return;
                     }
-                    if (this.params.mixing_mode !== 'pure_mix' && !this.params.tts_text.trim()) {
-                        this.showToast('请输入配音文本', 'warning');
+                    if (this.params.tts_enabled && !this.params.tts_text.trim()) {
+                        this.showToast('已启用 TTS 配音，请输入配音文本', 'warning');
                         return;
                     }
                     this.generating = true;
                     try {
-                        const needsTts = this.params.mixing_mode !== 'pure_mix' || this.params.tts_enabled;
+                        const needsTts = this.params.tts_enabled;
                         const isMode3 = this.params.mixing_mode === 'broll_voiceover';
                         const body = {
                             topic: '智能混剪',

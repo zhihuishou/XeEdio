@@ -12,7 +12,7 @@ import os
 import subprocess
 from typing import Callable, Optional
 
-from app.services.mixing_engine import combine_videos, execute_timeline
+from app.services.mixing_engine import combine_videos, execute_timeline, execute_montage_timeline
 from app.services.vlm_service import VLMService
 
 logger = logging.getLogger("app.ai_director_service")
@@ -108,9 +108,20 @@ class AIDirectorService:
             log(f"  A-roll duration: {a_roll_duration:.1f}s")
             log(f"  B-roll descs: {b_roll_descs}")
 
+            # If transcript is empty, provide a fallback hint so VLM still inserts B-roll
+            effective_transcript = transcript
+            if not effective_transcript or not effective_transcript.strip():
+                effective_transcript = (
+                    "(Transcript unavailable. Please analyze the visual content of the frames only. "
+                    "Insert B-roll clips at natural visual pauses, scene transitions, or moments "
+                    "where the speaker is not actively demonstrating a product. "
+                    "Aim for 2-4 B-roll insertions evenly distributed across the video.)"
+                )
+                log("  ⚠️ Transcript empty, using visual-only fallback prompt")
+
             try:
                 timeline = self.vlm_service.generate_timeline(
-                    frames, transcript, b_roll_descs, a_roll_duration,
+                    frames, effective_transcript, b_roll_descs, a_roll_duration,
                     user_prompt=director_prompt,
                 )
                 if timeline:
@@ -162,6 +173,144 @@ class AIDirectorService:
                 transition,
                 a_roll_paths=a_roll_paths,
                 b_roll_paths=b_roll_paths,
+            )
+            log("Step 3: Blind-cut fallback COMPLETE")
+            log("=" * 60)
+            return output_path, False
+
+    def run_montage_pipeline(
+        self,
+        clip_paths: list[str],
+        aspect_ratio: str = "9:16",
+        transition: str = "none",
+        audio_file: Optional[str] = None,
+        max_output_duration: int = 60,
+        progress_callback: Optional[Callable[[str], None]] = None,
+        director_prompt: str = "",
+    ) -> tuple[str, bool]:
+        """Run the montage pipeline — all clips are equal, no A-roll/B-roll.
+
+        Args:
+            clip_paths: List of all video clip file paths.
+            aspect_ratio: Target aspect ratio.
+            transition: Transition effect.
+            audio_file: Optional audio file (TTS or extracted). None for no voiceover.
+            max_output_duration: Target output duration in seconds.
+            progress_callback: Optional callback for progress updates.
+            director_prompt: Optional user directives for VLM.
+
+        Returns:
+            Tuple of (output_path, ai_director_used).
+        """
+        output_path = os.path.join(self.output_dir, "output-1.mp4")
+        log = self._task_log
+
+        log("=" * 60)
+        log(f"AI Director MONTAGE Pipeline Start — task={self.task_id}")
+        log(f"Clips: {len(clip_paths)} files: {clip_paths}")
+        log(f"Target duration: {max_output_duration}s")
+        log(f"Audio file: {audio_file or '(none)'}")
+        if director_prompt:
+            log(f"Director prompt: {director_prompt}")
+        log(f"Aspect: {aspect_ratio}, Transition: {transition}")
+
+        # Step 1: Extract frames from each clip
+        if progress_callback:
+            progress_callback("extracting_frames")
+
+        vlm_config = self.vlm_service.config.get_vlm_config()
+        clip_frames = []
+        clip_descriptions = []
+        total_clip_duration = 0.0
+
+        for idx, path in enumerate(clip_paths):
+            try:
+                dur = _get_video_duration(path)
+                total_clip_duration += dur
+                # Extract fewer frames per clip to stay within token limits
+                max_frames_per_clip = max(3, vlm_config.get("max_frames", 30) // len(clip_paths))
+                frames = self.vlm_service.extract_frames(
+                    path,
+                    frame_interval=max(dur / max_frames_per_clip, vlm_config.get("frame_interval", 2)),
+                    max_frames=max_frames_per_clip,
+                )
+                clip_frames.append(frames)
+                clip_descriptions.append({
+                    "filename": os.path.basename(path),
+                    "duration": dur,
+                    "index": idx,
+                })
+                log(f"Step 1: Clip {idx} — {len(frames)} frames, {dur:.1f}s")
+            except Exception as e:
+                log(f"Step 1: Clip {idx} frame extraction FAILED: {str(e)[:200]}")
+                clip_frames.append([])
+                clip_descriptions.append({
+                    "filename": os.path.basename(path),
+                    "duration": _get_video_duration(path),
+                    "index": idx,
+                })
+
+        log(f"Step 1: Extracted frames from {len(clip_paths)} clips, total source duration: {total_clip_duration:.1f}s")
+
+        # Step 2: Generate montage timeline via VLM
+        if progress_callback:
+            progress_callback("analyzing_with_vlm")
+
+        target_duration = min(max_output_duration, total_clip_duration)
+        timeline = None
+
+        has_frames = any(len(f) > 0 for f in clip_frames)
+        if has_frames:
+            log(f"Step 2: Sending frames from {len(clip_paths)} clips to VLM for montage arrangement")
+            try:
+                timeline = self.vlm_service.generate_montage_timeline(
+                    clip_frames, clip_descriptions, target_duration,
+                    user_prompt=director_prompt,
+                )
+                if timeline:
+                    log(f"Step 2: VLM returned {len(timeline)} montage entries:")
+                    for i, entry in enumerate(timeline):
+                        log(f"  [{i}] clip_{entry.get('clip_index')} "
+                            f"src {entry.get('source_start')}-{entry.get('source_end')}s → "
+                            f"out {entry.get('start')}-{entry.get('end')}s: "
+                            f"{entry.get('reason','')[:60]}")
+                else:
+                    log("Step 2: VLM returned None (failed or invalid)")
+            except Exception as e:
+                log(f"Step 2: VLM FAILED: {str(e)[:300]}")
+                timeline = None
+        else:
+            log("Step 2: SKIPPED (no frames extracted)")
+
+        # Step 3: Execute
+        if timeline:
+            if progress_callback:
+                progress_callback("executing_timeline")
+
+            log(f"Step 3: Executing montage timeline with {len(timeline)} entries")
+            execute_montage_timeline(
+                timeline,
+                clip_paths,
+                audio_file,
+                output_path,
+                aspect_ratio,
+                transition,
+            )
+            log(f"Step 3: Montage execution COMPLETE → {output_path}")
+            log("=" * 60)
+            return output_path, True
+        else:
+            if progress_callback:
+                progress_callback("falling_back_to_blind_cut")
+
+            log("Step 3: FALLBACK to blind-cut (no valid montage timeline)")
+            combine_videos(
+                combined_video_path=output_path,
+                video_paths=clip_paths,
+                audio_file=audio_file,
+                video_aspect=aspect_ratio,
+                video_concat_mode="random",
+                video_transition=transition,
             )
             log("Step 3: Blind-cut fallback COMPLETE")
             log("=" * 60)

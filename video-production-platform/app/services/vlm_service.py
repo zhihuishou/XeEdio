@@ -39,6 +39,34 @@ Rules:
 Return ONLY a JSON array, no other text:
 [{"type": "a_roll", "start": 0, "end": 4, "reason": "..."}, ...]"""
 
+# System prompt for montage mode — all clips are equal, no A-roll/B-roll distinction
+VLM_MONTAGE_SYSTEM_PROMPT = """You are an expert AI video director specializing in montage editing. You analyze multiple video clips and arrange them into a visually compelling montage.
+
+Given:
+- A list of video clips with frame previews, filenames, and durations
+- An optional theme/topic description
+
+Your task: Create an editing timeline that arranges these clips into a cohesive, visually engaging montage.
+
+Rules:
+1. ALL clips are equal — there is no "main" footage. Treat every clip as a potential segment.
+2. Analyze visual content, color, motion, and composition to determine the best arrangement order.
+3. Each clip can be used partially (trimmed) or fully. Use the best portions of each clip.
+4. Aim for visual variety — avoid placing visually similar clips next to each other.
+5. Create rhythm through varying segment durations (mix short 1-2s cuts with longer 3-5s holds).
+6. The timeline must have no gaps.
+7. Use "clip_index" to reference which source clip to use (0-based index).
+
+Return ONLY a JSON array, no other text:
+[{"type": "clip", "clip_index": 0, "start": 0.0, "end": 3.5, "source_start": 0.0, "source_end": 3.5, "reason": "..."}, ...]
+
+Where:
+- "type" is always "clip"
+- "clip_index" is the 0-based index of the source clip
+- "start"/"end" are the positions in the OUTPUT timeline
+- "source_start"/"source_end" are the trim points within the SOURCE clip
+- "reason" explains the editorial decision"""
+
 
 class VLMService:
     """VLM frame analysis and timeline generation service."""
@@ -224,6 +252,176 @@ class VLMService:
 
         logger.info("VLM generated valid timeline with %d entries", len(timeline))
         return timeline
+
+    def generate_montage_timeline(
+        self,
+        clip_frames: list[list[tuple[float, str]]],
+        clip_descriptions: list[dict],
+        target_duration: float,
+        user_prompt: str = "",
+    ) -> list[dict] | None:
+        """Generate a montage timeline from multiple equal clips.
+
+        Unlike generate_timeline which assumes A-roll/B-roll hierarchy,
+        this treats all clips equally and asks the VLM to arrange them
+        into a visually compelling montage.
+
+        Args:
+            clip_frames: List of frame lists, one per clip.
+                         Each is [(timestamp, base64_image), ...].
+            clip_descriptions: List of {"filename": str, "duration": float, "index": int}.
+            target_duration: Desired output duration in seconds.
+            user_prompt: Optional user directives for the VLM.
+
+        Returns:
+            List of montage timeline entry dicts, or None on failure.
+        """
+        vlm_config = self.config.get_vlm_config()
+        api_url = vlm_config.get("api_url", "")
+        api_key = vlm_config.get("api_key", "")
+        model = vlm_config.get("model", "gpt-5.4")
+
+        if not api_url or not api_key:
+            logger.warning("VLM API not configured, skipping montage timeline")
+            return None
+
+        user_content = self._build_montage_content(
+            clip_frames, clip_descriptions, target_duration
+        )
+
+        system_prompt = VLM_MONTAGE_SYSTEM_PROMPT
+        if user_prompt and user_prompt.strip():
+            system_prompt += f"\n\nAdditional director instructions from the user:\n{user_prompt.strip()}"
+
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            "max_tokens": 4096,
+            "temperature": 0.3,
+            "stream": False,
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+
+        raw_text = self._call_vlm_api(api_url, payload, headers)
+        if raw_text is None:
+            return None
+
+        timeline = self._parse_timeline_json(raw_text)
+        if timeline is None:
+            return None
+
+        if not self._validate_montage_timeline(timeline, clip_descriptions):
+            logger.warning("VLM returned invalid montage timeline, falling back")
+            return None
+
+        logger.info("VLM generated valid montage timeline with %d entries", len(timeline))
+        return timeline
+
+    def _validate_montage_timeline(
+        self,
+        timeline: list[dict],
+        clip_descriptions: list[dict],
+    ) -> bool:
+        """Validate montage timeline structure."""
+        if not isinstance(timeline, list) or len(timeline) == 0:
+            logger.error("Montage timeline validation failed: empty or not a list")
+            return False
+
+        num_clips = len(clip_descriptions)
+        prev_end = -1.0
+
+        for i, entry in enumerate(timeline):
+            if not isinstance(entry, dict):
+                logger.error("Montage timeline entry %d is not a dict", i)
+                return False
+
+            for field in ("type", "clip_index", "start", "end", "source_start", "source_end", "reason"):
+                if field not in entry:
+                    logger.error("Montage timeline entry %d missing field '%s'", i, field)
+                    return False
+
+            clip_index = entry["clip_index"]
+            if not isinstance(clip_index, int) or clip_index < 0 or clip_index >= num_clips:
+                logger.error("Montage timeline entry %d invalid clip_index: %r (max %d)", i, clip_index, num_clips - 1)
+                return False
+
+            start = entry["start"]
+            end = entry["end"]
+            if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
+                logger.error("Montage timeline entry %d non-numeric start/end", i)
+                return False
+            if start < 0 or end <= start:
+                logger.error("Montage timeline entry %d invalid start=%s end=%s", i, start, end)
+                return False
+
+            source_start = entry["source_start"]
+            source_end = entry["source_end"]
+            if not isinstance(source_start, (int, float)) or not isinstance(source_end, (int, float)):
+                logger.error("Montage timeline entry %d non-numeric source_start/source_end", i)
+                return False
+            if source_start < 0 or source_end <= source_start:
+                logger.error("Montage timeline entry %d invalid source range %s-%s", i, source_start, source_end)
+                return False
+
+            if prev_end > start + 0.05:
+                logger.error("Montage timeline overlap: entry %d start=%s < prev end=%s", i, start, prev_end)
+                return False
+
+            prev_end = end
+
+        return True
+
+    def _build_montage_content(
+        self,
+        clip_frames: list[list[tuple[float, str]]],
+        clip_descriptions: list[dict],
+        target_duration: float,
+    ) -> list[dict]:
+        """Build multimodal content for montage timeline generation."""
+        content: list[dict] = []
+
+        content.append({
+            "type": "text",
+            "text": (
+                f"You have {len(clip_descriptions)} video clips to arrange into a montage. "
+                f"Target output duration: ~{target_duration:.0f}s. "
+                f"Analyze the frames from each clip and create an engaging arrangement."
+            ),
+        })
+
+        for idx, (frames, desc) in enumerate(zip(clip_frames, clip_descriptions)):
+            filename = desc.get("filename", f"clip_{idx}")
+            duration = desc.get("duration", 0)
+            content.append({
+                "type": "text",
+                "text": f"\n--- Clip {idx}: {filename} (duration: {duration:.1f}s) ---",
+            })
+            for timestamp, b64_data in frames:
+                content.append({
+                    "type": "text",
+                    "text": f"[Clip {idx} @ {timestamp:.1f}s]",
+                })
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64_data}"},
+                })
+
+        content.append({
+            "type": "text",
+            "text": (
+                f"Generate a JSON timeline array for a ~{target_duration:.0f}s montage. "
+                f"Use the best portions of each clip. Return ONLY the JSON array."
+            ),
+        })
+
+        return content
 
     def validate_timeline(
         self,
