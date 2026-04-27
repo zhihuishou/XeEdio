@@ -5,9 +5,9 @@ import httpx
 import json
 
 # API Configuration
-API_URL = "https://api.luxee.ai/v1/chat/completions"
-API_KEY = "sk-8cee9cb9147b553008798bd2ace636dc8e50363d8f676a742a0535034bdcaece"
-MODEL = "gpt-5.4"
+API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+API_KEY = "sk-92ae3f703c814454a5537ab42c860f3d"
+MODEL = "qwen3-vl-plus"
 
 def extract_frames(video_path: str, output_dir: str, fps: float = 0.5):
     """提取视频帧 (默认 0.5fps，即每两秒提取一帧以免上下文过载)。"""

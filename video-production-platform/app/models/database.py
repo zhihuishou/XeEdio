@@ -4,11 +4,13 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     create_engine,
@@ -107,7 +109,7 @@ class TaskAsset(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     task_id = Column(String, ForeignKey("tasks.id"), nullable=False)
     asset_id = Column(String, ForeignKey("assets.id"), nullable=False)
-    roll_type = Column(String, nullable=False)  # a_roll|b_roll
+    roll_type = Column(String, nullable=False)  # clip|a_roll|b_roll (legacy: "asset")
     sequence_order = Column(Integer, nullable=False, default=0)
 
     task = relationship("Task", back_populates="task_assets")
@@ -163,6 +165,73 @@ class SystemConfig(Base):
     value = Column(Text, nullable=True)
     description = Column(String, nullable=True)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class AssetAnalysis(Base):
+    """VLM analysis results for an asset — populated asynchronously after upload."""
+    __tablename__ = "asset_analysis"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    asset_id = Column(String, ForeignKey("assets.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+
+    # VLM structured output
+    description = Column(Text, nullable=True)           # Content description
+    role = Column(String, nullable=True, index=True)    # presenter / product_closeup / lifestyle / transition / other
+    visual_quality = Column(String, nullable=True)       # high / medium / low
+    scene_tags = Column(Text, nullable=True)             # JSON array: ["室内", "美妆", "产品展示"]
+    key_moments = Column(Text, nullable=True)            # JSON array: [{"time": 5.0, "desc": "..."}]
+
+    # Audio metadata
+    audio_quality = Column(String, nullable=True)        # good / noisy / silent
+    has_speech = Column(Boolean, default=False)
+    speech_ranges = Column(Text, nullable=True)          # JSON array: [[0, 230], [1650, 1664]]
+    transcript = Column(Text, nullable=True)             # Whisper transcription
+
+    # Embedding vector
+    embedding = Column(LargeBinary, nullable=True)       # float32 array as bytes
+
+    # Status tracking
+    status = Column(String, nullable=False, default="pending")  # pending / analyzing / completed / failed
+    error_message = Column(Text, nullable=True)
+    vlm_model = Column(String, nullable=True)            # Model version used for analysis
+    analyzed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    asset = relationship("Asset", backref="analysis")
+
+
+class MixConversationSession(Base):
+    __tablename__ = "mix_conversation_sessions"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String, nullable=False, default="未命名会话")
+    last_task_id = Column(String, ForeignKey("tasks.id"), nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+    messages = relationship(
+        "MixConversationMessage",
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="MixConversationMessage.sequence",
+    )
+
+
+class MixConversationMessage(Base):
+    __tablename__ = "mix_conversation_messages"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    session_id = Column(String, ForeignKey("mix_conversation_sessions.id", ondelete="CASCADE"), nullable=False, index=True)
+    sequence = Column(Integer, nullable=False, default=0)
+    sender = Column(String, nullable=False)  # user|system
+    message_type = Column(String, nullable=False)  # text|progress|asset_upload|video_result|error
+    content = Column(Text, nullable=True)
+    extra_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    session = relationship("MixConversationSession", back_populates="messages")
 
 
 # --- Database session dependency ---

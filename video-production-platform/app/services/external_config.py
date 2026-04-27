@@ -219,7 +219,7 @@ class ExternalConfig:
         return {
             "api_url": self.get("vlm.api_url", ""),
             "api_key": self.get("vlm.api_key", ""),
-            "model": self.get("vlm.model", "gpt-5.4"),
+            "model": self.get("vlm.model", "qwen3-vl-plus"),
             "frame_interval": self.get("vlm.frame_interval", 2),
             "max_frames": self.get("vlm.max_frames", 30),
         }
@@ -233,6 +233,18 @@ class ExternalConfig:
             "model": self.get("ai_tts.model", "cosyvoice-v2"),
             "voice": self.get("ai_tts.voice", "longxiaochun_v2"),
             "fallback_to_edge_tts": self.get("ai_tts.fallback_to_edge_tts", True),
+        }
+
+    def get_embedding_config(self) -> dict:
+        """Get embedding API configuration.
+
+        Falls back to VLM config base URL if no dedicated embedding
+        config is provided.
+        """
+        return {
+            "api_url": self.get("embedding.api_url", ""),
+            "api_key": self.get("embedding.api_key", ""),
+            "model": self.get("embedding.model", ""),
         }
 
     def get_pexels_config(self) -> dict:

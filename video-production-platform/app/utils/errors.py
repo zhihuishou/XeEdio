@@ -1,5 +1,7 @@
 """Unified error handling and response format for the Video Production Platform."""
 
+from __future__ import annotations
+
 from enum import Enum
 from typing import Any
 

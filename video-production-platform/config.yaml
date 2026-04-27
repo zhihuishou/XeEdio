@@ -38,15 +38,15 @@ llm:
   default_provider: "gpt-4o-mini"
 
 vlm:
-  api_url: "https://api.luxee.ai/v1/chat/completions"
-  api_key: ""
-  model: "gpt-5.4"
+  api_url: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+  api_key: "sk-92ae3f703c814454a5537ab42c860f3d"
+  model: "qwen3-vl-plus"
   frame_interval: 2
   max_frames: 30
 
 ai_tts:
   provider: "dashscope"
-  api_key: ""
+  api_key: "sk-92ae3f703c814454a5537ab42c860f3d"
   model: "cosyvoice-v2"
   voice: "longyingtian"
   fallback_to_edge_tts: true
@@ -67,6 +67,11 @@ upload:
 
 batch:
   max_concurrency: 3
+
+embedding:
+  api_url: ""
+  api_key: ""
+  model: "text-embedding-3-small"
 
 pexels:
   api_key: "P6KSrRWsl3RgerXTOpfkJE3LuwTyQBJt13xvXvWShyWJRjn8H3MOfoWB"

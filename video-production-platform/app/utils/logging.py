@@ -86,6 +86,11 @@ def setup_logging() -> None:
     ffmpeg_logger.addHandler(_create_file_handler("ffmpeg.log", logging.DEBUG))
     ffmpeg_logger.propagate = True
 
+    # Mixing engine log - montage rendering
+    mixing_logger = logging.getLogger("app.mixing_engine")
+    mixing_logger.addHandler(_create_file_handler("ffmpeg.log", logging.DEBUG))
+    mixing_logger.propagate = True
+
     # Review log - review operations
     review_logger = logging.getLogger("app.review")
     review_logger.addHandler(_create_file_handler("review.log", logging.DEBUG))

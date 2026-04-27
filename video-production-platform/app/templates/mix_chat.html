@@ -1,0 +1,1010 @@
+{% extends "base.html" %}
+{% block title %}智能混剪 · XeEdio{% endblock %}
+{% block nav_mix %}active{% endblock %}
+{% block topbar %}<span class="text-sm font-semibold text-slate-700">智能混剪</span>{% endblock %}
+
+{% block content %}
+<div x-data="mixChat()" x-init="init()" class="flex flex-col h-[calc(100vh-52px-48px)]">
+
+    <!-- Messages Area -->
+    <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4" x-ref="messagesContainer">
+        <template x-for="(msg, idx) in messages" :key="idx">
+            <div :class="msg.sender === 'user' ? 'flex justify-end' : 'flex justify-start'">
+                <div :class="msg.sender === 'user'
+                    ? 'bg-slate-700 text-white rounded-2xl rounded-br-md px-4 py-2.5 max-w-[75%]'
+                    : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-bl-md px-4 py-2.5 max-w-[75%] shadow-sm'">
+
+                    <!-- Text message -->
+                    <template x-if="msg.type === 'text'">
+                        <p class="text-sm whitespace-pre-wrap" x-text="msg.content"></p>
+                    </template>
+
+                    <!-- Asset upload card -->
+                    <template x-if="msg.type === 'asset_upload'">
+                        <div class="space-y-2">
+                            <p class="text-sm font-medium" x-text="'📎 已添加 ' + msg.assets.length + ' 个素材'"></p>
+                            <template x-for="a in msg.assets" :key="a.id">
+                                <div class="flex items-center gap-2 bg-gray-50 rounded-lg p-2 border border-gray-100">
+                                    <img :src="a.thumbnail_path ? '/' + a.thumbnail_path : '/static/placeholder.svg'"
+                                        class="w-10 h-10 rounded object-cover" @error="$event.target.src='/static/placeholder.svg'">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-xs font-medium text-gray-700 truncate" x-text="a.original_filename"></p>
+                                        <div class="flex items-center gap-1">
+                                            <!-- Analyzing / Pending status -->
+                                            <template x-if="getAssetAnalysisStatus(a.id) === 'analyzing' || getAssetAnalysisStatus(a.id) === 'pending'">
+                                                <span class="inline-flex items-center gap-1 text-xs text-blue-600">
+                                                    <svg class="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                                    </svg>
+                                                    <span>分析中...</span>
+                                                </span>
+                                            </template>
+                                            <!-- Completed status -->
+                                            <template x-if="getAssetAnalysisStatus(a.id) === 'completed'">
+                                                <span class="inline-flex items-center gap-1 text-xs text-green-600">
+                                                    <span>✅</span>
+                                                    <span class="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full text-xs font-medium" x-text="getRoleLabel(getAssetAnalysisRole(a.id))"></span>
+                                                </span>
+                                            </template>
+                                            <!-- Failed status -->
+                                            <template x-if="getAssetAnalysisStatus(a.id) === 'failed'">
+                                                <span class="inline-flex items-center gap-1 text-xs text-red-500">
+                                                    <span>❌</span>
+                                                    <span>分析失败</span>
+                                                </span>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+
+                    <!-- Progress message -->
+                    <template x-if="msg.type === 'progress'">
+                        <div class="flex items-center gap-2">
+                            <svg class="animate-spin h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                            <p class="text-sm" x-text="msg.content"></p>
+                            <button @click="cancelTask()" class="ml-2 text-xs text-red-500 hover:text-red-700 cursor-pointer">取消</button>
+                        </div>
+                    </template>
+
+                    <!-- Video result card -->
+                    <template x-if="msg.type === 'video_result'">
+                        <div class="space-y-3">
+                            <p class="text-sm font-medium">✅ 生成完成</p>
+                            <template x-for="(vp, vi) in msg.video_paths" :key="vi">
+                                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                    <video :src="'/' + vp" controls class="w-full max-h-64"></video>
+                                    <div class="flex items-center justify-between px-3 py-2 bg-gray-50">
+                                        <span class="text-xs text-gray-500" x-text="'output-' + (vi+1) + '.mp4'"></span>
+                                        <a :href="'/' + vp" download class="text-xs text-blue-600 hover:underline">下载</a>
+                                    </div>
+                                </div>
+                            </template>
+                            <div class="flex gap-2">
+                                <button @click="recomposeTimelineTask(msg.task_id)"
+                                    class="flex-1 text-center text-sm bg-indigo-50 text-indigo-700 py-2 rounded-lg hover:bg-indigo-100 cursor-pointer transition-colors">
+                                    ⏱️ 仅重跑时间线
+                                </button>
+                                <button @click="recomposeTask(msg.task_id)"
+                                    class="flex-1 text-center text-sm bg-slate-100 text-slate-700 py-2 rounded-lg hover:bg-slate-200 cursor-pointer transition-colors">
+                                    🔄 重新生成
+                                </button>
+                                <button @click="submitReview(msg.task_id)"
+                                    class="flex-1 text-center text-sm bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 cursor-pointer transition-colors">
+                                    提交审核
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Error message -->
+                    <template x-if="msg.type === 'error'">
+                        <p class="text-sm text-red-600" x-text="'❌ ' + msg.content"></p>
+                    </template>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Selected Assets Bar -->
+    <div x-show="selectedAssets.length > 0" class="px-4 py-2 bg-white border-t border-gray-100">
+        <div class="flex items-center gap-2 overflow-x-auto">
+            <span class="text-xs text-gray-500 flex-shrink-0">已选素材:</span>
+            <template x-for="a in selectedAssets" :key="a.id">
+                <div class="flex items-center gap-1 bg-gray-100 rounded-full px-2 py-1 flex-shrink-0">
+                    <span class="text-xs text-gray-700 max-w-[100px] truncate" x-text="a.original_filename"></span>
+                    <button @click="removeAsset(a.id)" class="text-gray-400 hover:text-red-500 cursor-pointer">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Params Panel (collapsible) -->
+    <div x-show="showParams" x-transition class="px-4 py-3 bg-white border-t border-gray-100">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+                <label class="text-xs text-gray-500">目标时长</label>
+                <select x-model="params.max_output_duration" class="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1.5">
+                    <option value="30">30秒</option>
+                    <option value="60">60秒</option>
+                    <option value="90">90秒</option>
+                    <option value="120">120秒</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">输出数量</label>
+                <select x-model="params.video_count" class="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1.5">
+                    <option value="1">1条</option>
+                    <option value="2">2条</option>
+                    <option value="3">3条</option>
+                    <option value="5">5条</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">画面比例</label>
+                <select x-model="params.aspect_ratio" class="w-full mt-1 text-sm border border-gray-200 rounded-md px-2 py-1.5">
+                    <option value="9:16">9:16 竖屏</option>
+                    <option value="16:9">16:9 横屏</option>
+                    <option value="1:1">1:1 方形</option>
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500">TTS 音色</label>
+                <div class="flex items-end gap-1 mt-1">
+                    <select x-model="params.tts_voice" class="flex-1 text-sm border border-gray-200 rounded-md px-2 py-1.5">
+                        <option value="">不使用配音</option>
+                        <option value="longyan_v2">妍妍 (女)</option>
+                        <option value="longshu_v2">舒舒 (男)</option>
+                        <option value="longmiao_v2">喵喵 (女)</option>
+                    </select>
+                    <button x-show="params.tts_voice" @click="previewTTS()"
+                        class="flex-shrink-0 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2 py-1.5 rounded-md cursor-pointer transition-colors"
+                        title="预览音色">
+                        ▶ 预览
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Script text textarea (shown when TTS voice is selected) -->
+        <div x-show="params.tts_voice" x-transition class="mt-3">
+            <label class="text-xs text-gray-500">脚本文案</label>
+            <textarea x-model="params.script_text"
+                placeholder="输入脚本文案（可选，用于 TTS 配音 + 字幕）"
+                rows="3"
+                class="w-full mt-1 text-sm border border-gray-200 rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"></textarea>
+        </div>
+    </div>
+
+    <!-- Input Area -->
+    <div class="px-4 py-3 bg-white border-t border-gray-200">
+        <div class="flex items-end gap-2">
+            <!-- Upload button -->
+            <input type="file" x-ref="fileInput" @change="handleFileUpload($event)" multiple
+                accept="video/mp4,video/quicktime,video/x-msvideo,image/jpeg,image/png,image/webp"
+                class="hidden">
+            <button @click="$refs.fileInput.click()" :disabled="uploading"
+                class="flex-shrink-0 p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                title="添加素材">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                </svg>
+            </button>
+
+            <!-- Asset library button -->
+            <button @click="showAssetPicker = true; clearSearch(); loadLibraryAssets()"
+                class="flex-shrink-0 p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+                title="从素材库选择">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+            </button>
+
+            <!-- Params toggle -->
+            <button @click="showParams = !showParams"
+                :class="showParams ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'"
+                class="flex-shrink-0 p-2 rounded-lg cursor-pointer transition-colors"
+                title="参数设置">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
+                </svg>
+            </button>
+
+            <!-- Text input -->
+            <div class="flex-1">
+                <textarea x-model="inputText" @keydown.enter="if(!$event.shiftKey){$event.preventDefault(); sendMessage()}"
+                    placeholder="输入剪辑指令，如：剪一条60秒的产品种草视频..."
+                    rows="1"
+                    class="w-full resize-none border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    style="max-height: 120px; overflow-y: auto;"
+                    @input="$el.style.height='auto'; $el.style.height=$el.scrollHeight+'px'"></textarea>
+            </div>
+
+            <!-- Send button -->
+            <button @click="sendMessage()" :disabled="!canSend"
+                class="flex-shrink-0 p-2.5 bg-slate-700 text-white rounded-xl hover:bg-slate-800 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Asset Picker Modal -->
+    <div x-show="showAssetPicker" class="fixed inset-0 z-40" x-transition>
+        <div class="flex items-center justify-center min-h-screen px-4">
+            <div class="fixed inset-0 bg-black/50" @click="showAssetPicker = false"></div>
+            <div class="bg-white rounded-xl shadow-xl max-w-2xl w-full relative z-50 p-6 max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-gray-800">从素材库选择</h3>
+                    <button @click="showAssetPicker = false" class="text-gray-400 hover:text-gray-600 cursor-pointer">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+                <!-- Search Input -->
+                <div class="mb-3 relative">
+                    <div class="flex items-center gap-2">
+                        <div class="flex-1 relative">
+                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                            </svg>
+                            <input type="text" x-model="searchQuery"
+                                @keydown.enter.prevent="searchAssets()"
+                                @input="debouncedSearch()"
+                                placeholder="语义搜索素材，如：产品特写、主播口播..."
+                                class="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <button x-show="searchQuery.length > 0" @click="clearSearch()"
+                                class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer"
+                                title="清除搜索">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <p x-show="isSearchMode && !searchLoading && !libraryLoading" class="text-xs text-gray-500 mt-1">
+                        找到 <span x-text="searchResults.length"></span> 个相关素材
+                    </p>
+                </div>
+                <div class="flex-1 overflow-y-auto">
+                    <div x-show="libraryLoading || searchLoading" class="flex justify-center py-8">
+                        <svg class="animate-spin h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                    </div>
+                    <div class="grid grid-cols-3 gap-3">
+                        <template x-for="a in pickerDisplayAssets" :key="a.id">
+                            <div @click="toggleLibraryAsset(a)"
+                                :class="isAssetSelected(a.id) ? 'ring-2 ring-blue-500' : ''"
+                                class="bg-gray-50 rounded-lg overflow-hidden cursor-pointer hover:shadow-md transition-all">
+                                <div class="aspect-video bg-gray-200 relative">
+                                    <img :src="a.thumbnail_path ? '/' + a.thumbnail_path : '/static/placeholder.svg'"
+                                        class="w-full h-full object-cover" @error="$event.target.src='/static/placeholder.svg'">
+                                    <template x-if="isAssetSelected(a.id)">
+                                        <div class="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                                            <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                                            </svg>
+                                        </div>
+                                    </template>
+                                    <template x-if="a.relevance_score != null">
+                                        <span class="absolute top-1 right-1 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-medium" x-text="Math.round(a.relevance_score * 100) + '%'"></span>
+                                    </template>
+                                    <template x-if="a.analysis_role || a.role">
+                                        <span class="absolute bottom-1 left-1 text-xs bg-black/60 text-white px-1.5 py-0.5 rounded" x-text="getRoleLabel(a.analysis_role || a.role)"></span>
+                                    </template>
+                                </div>
+                                <div class="p-1.5">
+                                    <p class="text-xs text-gray-700 truncate" x-text="a.original_filename"></p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                    <div x-show="isSearchMode && !searchLoading && searchResults.length === 0" class="flex flex-col items-center justify-center py-8 text-gray-400">
+                        <svg class="w-10 h-10 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                        </svg>
+                        <p class="text-sm">未找到匹配的素材</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex justify-end">
+                    <button @click="confirmAssetSelection()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 cursor-pointer">
+                        确认选择 (<span x-text="selectedAssets.length"></span>)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function mixChat() {
+    return {
+        messages: [],
+        inputText: '',
+        selectedAssets: [],
+        uploading: false,
+        processing: false,
+        currentTaskId: null,
+        pollTimer: null,
+        showParams: false,
+        showAssetPicker: false,
+        libraryAssets: [],
+        libraryLoading: false,
+        searchQuery: '',
+        searchResults: [],
+        searchLoading: false,
+        isSearchMode: false,
+        searchDebounceTimer: null,
+        analysisStatusCache: {},      // { assetId: { status, role } }
+        analysisPollingTimers: {},    // { assetId: intervalId }
+        conversationSessionId: null,
+        storageKey: 'mix_chat_state_v1',
+
+        params: {
+            max_output_duration: '60',
+            video_count: '1',
+            aspect_ratio: '9:16',
+            tts_voice: '',
+            transition: 'none',
+            bgm_enabled: false,
+            script_text: '',
+        },
+
+        previewAudio: null,
+
+        get canSend() {
+            return this.inputText.trim() && this.selectedAssets.length > 0 && !this.processing;
+        },
+
+        async init() {
+            await this.restoreConversationState();
+            if (this.messages.length === 0) {
+                this.addMessage('system', 'text',
+                    '👋 欢迎使用智能混剪！\n\n' +
+                    '1. 点击 📎 上传素材，或从素材库选择\n' +
+                    '2. 输入剪辑指令，如"剪一条60秒的产品种草视频"\n' +
+                    '3. 点击发送，AI 导演会自动分析素材并生成视频'
+                );
+            }
+            if (this.currentTaskId && this.processing) {
+                this.startPolling(this.currentTaskId);
+            }
+        },
+
+        getUserStorageKey() {
+            const user = getCurrentUser();
+            const username = user?.username || 'anonymous';
+            return `${this.storageKey}:${username}`;
+        },
+
+        sanitizeMessageForStorage(msg) {
+            return {
+                sender: msg.sender,
+                type: msg.type,
+                content: msg.content || '',
+                assets: msg.assets || undefined,
+                video_paths: msg.video_paths || undefined,
+                task_id: msg.task_id || undefined,
+            };
+        },
+
+        saveLocalState() {
+            try {
+                localStorage.setItem(this.getUserStorageKey(), JSON.stringify({
+                    messages: this.messages.map(m => this.sanitizeMessageForStorage(m)),
+                    selectedAssets: this.selectedAssets,
+                    currentTaskId: this.currentTaskId,
+                    processing: this.processing,
+                    conversationSessionId: this.conversationSessionId,
+                    params: this.params,
+                    inputText: this.inputText,
+                    analysisStatusCache: this.analysisStatusCache,
+                }));
+            } catch (e) {
+                console.error('saveLocalState failed', e);
+            }
+        },
+
+        loadLocalState() {
+            try {
+                const raw = localStorage.getItem(this.getUserStorageKey());
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                this.messages = Array.isArray(parsed.messages) ? parsed.messages : [];
+                this.selectedAssets = Array.isArray(parsed.selectedAssets) ? parsed.selectedAssets : [];
+                this.currentTaskId = parsed.currentTaskId || null;
+                this.processing = !!parsed.processing;
+                this.conversationSessionId = parsed.conversationSessionId || null;
+                this.params = parsed.params ? { ...this.params, ...parsed.params } : this.params;
+                this.inputText = parsed.inputText || '';
+                this.analysisStatusCache = parsed.analysisStatusCache || {};
+                return true;
+            } catch (e) {
+                console.error('loadLocalState failed', e);
+                return false;
+            }
+        },
+
+        async ensureSession() {
+            if (this.conversationSessionId) return this.conversationSessionId;
+            const list = await apiCall('GET', '/api/mix/sessions');
+            const latest = list?.items?.[0];
+            if (latest?.session_id) {
+                this.conversationSessionId = latest.session_id;
+                this.saveLocalState();
+                return this.conversationSessionId;
+            }
+            const created = await apiCall('POST', '/api/mix/sessions', { title: '智能混剪会话' });
+            this.conversationSessionId = created?.session_id || null;
+            this.saveLocalState();
+            return this.conversationSessionId;
+        },
+
+        async restoreConversationState() {
+            const hasLocal = this.loadLocalState();
+            try {
+                const sid = await this.ensureSession();
+                if (!sid) return;
+                const detail = await apiCall('GET', `/api/mix/sessions/${sid}`);
+                const remoteMessages = Array.isArray(detail?.messages) ? detail.messages : [];
+                if ((!hasLocal || this.messages.length === 0) && remoteMessages.length > 0) {
+                    this.messages = remoteMessages.map(m => ({
+                        sender: m.sender,
+                        type: m.type,
+                        content: m.content || '',
+                        ...(m.extra || {}),
+                    }));
+                    this.currentTaskId = detail.last_task_id || this.currentTaskId;
+                }
+                this.saveLocalState();
+            } catch (e) {
+                console.error('restoreConversationState failed', e);
+            }
+        },
+
+        async syncMessageToServer(message) {
+            try {
+                const sid = await this.ensureSession();
+                if (!sid) return;
+                await apiCall('POST', `/api/mix/sessions/${sid}/messages`, {
+                    sender: message.sender,
+                    type: message.type,
+                    content: message.content || '',
+                    extra: {
+                        assets: message.assets || undefined,
+                        video_paths: message.video_paths || undefined,
+                        task_id: message.task_id || undefined,
+                    },
+                });
+            } catch (e) {
+                console.error('syncMessageToServer failed', e);
+            }
+        },
+
+        async syncSessionMeta() {
+            try {
+                const sid = await this.ensureSession();
+                if (!sid) return;
+                await apiCall('PUT', `/api/mix/sessions/${sid}`, {
+                    last_task_id: this.currentTaskId,
+                });
+            } catch (e) {
+                console.error('syncSessionMeta failed', e);
+            }
+        },
+
+        addMessage(sender, type, content, extra = {}) {
+            if (sender === 'system' && type === 'progress') {
+                // Keep only one active progress bubble in UI.
+                this.messages = this.messages.filter(m => !(m.sender === 'system' && m.type === 'progress'));
+            }
+            const msg = { sender, type, content, ...extra };
+            this.messages.push(msg);
+            this.saveLocalState();
+            this.syncMessageToServer(msg);
+            this.$nextTick(() => {
+                const container = this.$refs.messagesContainer;
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+        },
+
+        clearProgressMessages() {
+            this.messages = this.messages.filter(m => !(m.sender === 'system' && m.type === 'progress'));
+            this.saveLocalState();
+        },
+
+        updateLastSystemMessage(type, content, extra = {}) {
+            if (type === 'progress') {
+                this.messages = this.messages.filter(m => !(m.sender === 'system' && m.type === 'progress'));
+            }
+            for (let i = this.messages.length - 1; i >= 0; i--) {
+                if (this.messages[i].sender === 'system' && this.messages[i].type === 'progress') {
+                    this.messages[i] = { sender: 'system', type, content, ...extra };
+                    this.saveLocalState();
+                    this.syncMessageToServer(this.messages[i]);
+                    return;
+                }
+            }
+            this.addMessage('system', type, content, extra);
+        },
+
+        // --- File Upload ---
+        async handleFileUpload(event) {
+            const files = Array.from(event.target.files || []);
+            if (!files.length) return;
+            this.uploading = true;
+
+            const uploaded = [];
+            for (const file of files) {
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    formData.append('category', 'product'); // Default category
+                    const result = await apiUpload('/api/assets/upload', formData);
+                    if (result) uploaded.push(result);
+                } catch (e) {
+                    this.addMessage('system', 'error', `上传失败: ${file.name} — ${e.data?.error?.message || '未知错误'}`);
+                }
+            }
+
+            if (uploaded.length > 0) {
+                for (const a of uploaded) {
+                    if (!this.selectedAssets.find(s => s.id === a.id)) {
+                        this.selectedAssets.push(a);
+                    }
+                    // Start polling analysis status for newly uploaded assets
+                    this.startAnalysisPolling(a.id, a.analysis_status || 'pending');
+                }
+                this.addMessage('user', 'asset_upload', '', { assets: uploaded });
+                this.addMessage('system', 'text', `已收到 ${uploaded.length} 个素材，正在后台分析中...`);
+                this.saveLocalState();
+            }
+
+            this.uploading = false;
+            event.target.value = '';
+        },
+
+        // --- Asset Library ---
+        async loadLibraryAssets() {
+            this.libraryLoading = true;
+            try {
+                const data = await apiCall('GET', '/api/assets?page_size=50');
+                this.libraryAssets = data?.items || [];
+            } catch (e) {
+                console.error('Failed to load library:', e);
+            }
+            this.libraryLoading = false;
+        },
+
+        get pickerDisplayAssets() {
+            return this.isSearchMode ? this.searchResults : this.libraryAssets;
+        },
+
+        // --- Semantic Search ---
+        debouncedSearch() {
+            if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer);
+            if (!this.searchQuery.trim()) {
+                this.clearSearch();
+                return;
+            }
+            this.searchDebounceTimer = setTimeout(() => {
+                this.searchAssets();
+            }, 400);
+        },
+
+        async searchAssets() {
+            const q = this.searchQuery.trim();
+            if (!q) {
+                this.clearSearch();
+                return;
+            }
+            this.searchLoading = true;
+            this.isSearchMode = true;
+            try {
+                const data = await apiCall('GET', `/api/assets/search?q=${encodeURIComponent(q)}&limit=20`);
+                this.searchResults = data?.items || [];
+            } catch (e) {
+                console.error('Search failed:', e);
+                this.searchResults = [];
+            }
+            this.searchLoading = false;
+        },
+
+        clearSearch() {
+            this.searchQuery = '';
+            this.searchResults = [];
+            this.isSearchMode = false;
+            if (this.searchDebounceTimer) {
+                clearTimeout(this.searchDebounceTimer);
+                this.searchDebounceTimer = null;
+            }
+        },
+
+        isAssetSelected(id) {
+            return this.selectedAssets.some(a => a.id === id);
+        },
+
+        toggleLibraryAsset(asset) {
+            const idx = this.selectedAssets.findIndex(a => a.id === asset.id);
+            if (idx >= 0) {
+                this.selectedAssets.splice(idx, 1);
+            } else {
+                this.selectedAssets.push(asset);
+            }
+        },
+
+        confirmAssetSelection() {
+            this.showAssetPicker = false;
+            if (this.selectedAssets.length > 0) {
+                this.addMessage('user', 'asset_upload', '', { assets: [...this.selectedAssets] });
+                // Start polling for any assets that are still being analyzed
+                for (const a of this.selectedAssets) {
+                    const status = a.analysis_status || 'pending';
+                    this.analysisStatusCache[a.id] = {
+                        status: status,
+                        role: a.analysis_role || null,
+                    };
+                    if (status === 'pending' || status === 'analyzing') {
+                        this.startAnalysisPolling(a.id, status);
+                    }
+                }
+            }
+            this.saveLocalState();
+        },
+
+        removeAsset(id) {
+            this.selectedAssets = this.selectedAssets.filter(a => a.id !== id);
+            this.saveLocalState();
+        },
+
+        getRoleLabel(role) {
+            const labels = {
+                'presenter': '主讲', 'product_closeup': '产品特写',
+                'lifestyle': '生活场景', 'transition': '过渡', 'other': '其他'
+            };
+            return labels[role] || role;
+        },
+
+        // --- Analysis Status Polling ---
+        getAssetAnalysisStatus(assetId) {
+            const cached = this.analysisStatusCache[assetId];
+            return cached ? cached.status : 'pending';
+        },
+
+        getAssetAnalysisRole(assetId) {
+            const cached = this.analysisStatusCache[assetId];
+            return cached ? cached.role : '';
+        },
+
+        startAnalysisPolling(assetId, initialStatus) {
+            // Initialize cache entry from known data
+            if (!this.analysisStatusCache[assetId]) {
+                this.analysisStatusCache[assetId] = {
+                    status: initialStatus || 'pending',
+                    role: null,
+                };
+            }
+
+            // Don't poll if already completed or failed
+            const status = this.analysisStatusCache[assetId].status;
+            if (status === 'completed' || status === 'failed') return;
+
+            // Don't start duplicate timers
+            if (this.analysisPollingTimers[assetId]) return;
+
+            this.analysisPollingTimers[assetId] = setInterval(() => {
+                this.pollAnalysisStatus(assetId);
+            }, 3000);
+        },
+
+        async pollAnalysisStatus(assetId) {
+            try {
+                const data = await apiCall('GET', `/api/assets/${assetId}/analysis`);
+                if (!data) return;
+
+                this.analysisStatusCache[assetId] = {
+                    status: data.status,
+                    role: data.role,
+                };
+
+                // Also update the asset in selectedAssets for consistency
+                const sa = this.selectedAssets.find(a => a.id === assetId);
+                if (sa) {
+                    sa.analysis_status = data.status;
+                    sa.analysis_role = data.role;
+                }
+
+                // Update asset data in message cards
+                for (const msg of this.messages) {
+                    if (msg.type === 'asset_upload' && msg.assets) {
+                        const msgAsset = msg.assets.find(a => a.id === assetId);
+                        if (msgAsset) {
+                            msgAsset.analysis_status = data.status;
+                            msgAsset.analysis_role = data.role;
+                        }
+                    }
+                }
+
+                // Stop polling if terminal state
+                if (data.status === 'completed' || data.status === 'failed') {
+                    this.stopAnalysisPolling(assetId);
+                }
+                this.saveLocalState();
+            } catch (e) {
+                // 404 means no analysis record yet — keep polling
+                if (e?.status === 404) return;
+                console.error(`Analysis poll error for ${assetId}:`, e);
+            }
+        },
+
+        stopAnalysisPolling(assetId) {
+            if (this.analysisPollingTimers[assetId]) {
+                clearInterval(this.analysisPollingTimers[assetId]);
+                delete this.analysisPollingTimers[assetId];
+            }
+        },
+
+        stopAllAnalysisPolling() {
+            for (const assetId of Object.keys(this.analysisPollingTimers)) {
+                clearInterval(this.analysisPollingTimers[assetId]);
+            }
+            this.analysisPollingTimers = {};
+        },
+
+        // --- Intent Parsing ---
+        async parseIntent(directorPrompt) {
+            try {
+                const data = await apiCall('POST', '/api/mix/parse-intent', {
+                    director_prompt: directorPrompt,
+                });
+                return data;
+            } catch (e) {
+                console.error('Intent parsing failed:', e);
+                return null;
+            }
+        },
+
+        showParsedParams(params) {
+            const lines = [];
+            if (params.video_count > 1) lines.push(`数量: ${params.video_count}条`);
+            if (params.max_output_duration !== 60) lines.push(`时长: ${params.max_output_duration}秒`);
+            if (params.aspect_ratio !== '9:16') lines.push(`比例: ${params.aspect_ratio}`);
+            if (params.strip_audio) lines.push('去除原声: 是');
+            if (params.bgm_enabled) lines.push('背景音乐: 开启');
+            if (params.subtitle_font) lines.push(`字体: ${params.subtitle_font}`);
+            if (params.editing_style) lines.push(`风格: ${params.editing_style}`);
+            return lines.length > 0 ? '已识别参数:\n' + lines.join('\n') : '使用默认参数';
+        },
+
+        // --- Send Message & Create Task ---
+        async sendMessage() {
+            if (!this.canSend) return;
+            const text = this.inputText.trim();
+            this.inputText = '';
+
+            this.addMessage('user', 'text', text);
+            this.processing = true;
+
+            // Call backend to parse intent from natural language
+            this.addMessage('system', 'progress', '正在解析指令...');
+            const parsedParams = await this.parseIntent(text);
+
+            if (parsedParams) {
+                // Display extracted parameters as confirmation
+                const paramSummary = this.showParsedParams(parsedParams);
+                this.updateLastSystemMessage('text', paramSummary);
+            }
+
+            // Build request — send raw director_prompt and UI panel defaults;
+            // the backend handles all parameter extraction and merging via IntentParsingService
+            const body = {
+                topic: text,
+                asset_ids: this.selectedAssets.map(a => a.id),
+                director_prompt: text,
+                script_text: this.params.script_text.trim() || '',
+                aspect_ratio: this.params.aspect_ratio,
+                max_output_duration: parseInt(this.params.max_output_duration),
+                video_count: parseInt(this.params.video_count),
+                transition: this.params.transition,
+                tts_voice: this.params.tts_voice,
+                bgm_enabled: this.params.bgm_enabled,
+                // Use auto mode — backend routes to text-driven or vision-driven pipeline
+                mixing_mode: 'auto',
+                a_roll_asset_ids: [],
+                b_roll_asset_ids: [],
+                concat_mode: 'random',
+                clip_duration: 5,
+                bgm_asset_id: '',
+                bgm_volume: 0.2,
+                tts_text: this.params.script_text.trim() || '',
+            };
+
+            this.addMessage('system', 'progress', '正在创建混剪任务...');
+
+            try {
+                const result = await apiCall('POST', '/api/mix/create', body);
+                if (!result) throw new Error('创建失败');
+                this.currentTaskId = result.task_id;
+                this.saveLocalState();
+                this.syncSessionMeta();
+                this.updateLastSystemMessage('progress', '⏳ AI 导演正在分析素材...');
+                this.startPolling(result.task_id);
+            } catch (e) {
+                this.processing = false;
+                const msg = e.data?.error?.message || '创建任务失败';
+                this.updateLastSystemMessage('error', msg);
+            }
+        },
+
+        // --- Polling ---
+        startPolling(taskId) {
+            if (this.pollTimer) clearInterval(this.pollTimer);
+            this.pollTimer = setInterval(() => this.checkStatus(taskId), 3000);
+        },
+
+        async checkStatus(taskId) {
+            try {
+                const status = await apiCall('GET', `/api/mix/${taskId}/status`);
+                if (!status) return;
+
+                if (status.status === 'processing') {
+                    const progressText = status.progress || '处理中...';
+                    this.updateLastSystemMessage('progress', '⏳ ' + progressText);
+                } else if (status.status === 'video_done') {
+                    clearInterval(this.pollTimer);
+                    this.pollTimer = null;
+                    this.processing = false;
+                    this.clearProgressMessages();
+                    this.addMessage('system', 'text', '✅ 任务已完成');
+                    const paths = status.video_paths || [];
+                    this.updateLastSystemMessage('video_result', '', {
+                        video_paths: paths,
+                        task_id: taskId,
+                    });
+                } else if (status.status === 'failed') {
+                    clearInterval(this.pollTimer);
+                    this.pollTimer = null;
+                    this.processing = false;
+                    this.clearProgressMessages();
+                    this.addMessage('system', 'text', '❌ 任务失败');
+                    this.updateLastSystemMessage('error', status.error_message || '生成失败');
+                } else if (status.status === 'cancelled') {
+                    clearInterval(this.pollTimer);
+                    this.pollTimer = null;
+                    this.processing = false;
+                    this.clearProgressMessages();
+                    this.updateLastSystemMessage('text', '⛔ 任务已取消');
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        },
+
+        // --- Recompose (video_done / same params) vs retry (failed only) ---
+        async recomposeTask(taskId) {
+            try {
+                this.processing = true;
+                this.addMessage('system', 'progress', '🔄 正在重新混剪...');
+                const result = await apiCall('POST', `/api/mix/${taskId}/recompose`);
+                if (!result || !result.task_id) throw new Error('重新混剪失败');
+                this.currentTaskId = result.task_id;
+                this.saveLocalState();
+                this.syncSessionMeta();
+                this.updateLastSystemMessage('progress', '⏳ 混剪进行中...');
+                this.startPolling(result.task_id);
+            } catch (e) {
+                this.processing = false;
+                const msg = e.data?.error?.message || '重新混剪失败';
+                this.updateLastSystemMessage('error', msg);
+            }
+        },
+
+        async recomposeTimelineTask(taskId) {
+            try {
+                this.processing = true;
+                this.addMessage('system', 'progress', '⏱️ 正在仅重跑时间线...');
+                const result = await apiCall('POST', `/api/mix/${taskId}/recompose-timeline`);
+                if (!result || !result.task_id) throw new Error('仅重跑时间线失败');
+                this.currentTaskId = result.task_id;
+                this.saveLocalState();
+                this.syncSessionMeta();
+                this.updateLastSystemMessage('progress', '⏳ 正在重算时间线...');
+                this.startPolling(result.task_id);
+            } catch (e) {
+                this.processing = false;
+                const msg = e.data?.error?.message || '仅重跑时间线失败';
+                this.updateLastSystemMessage('error', msg);
+            }
+        },
+
+        async retryTask(taskId) {
+            try {
+                this.processing = true;
+                this.addMessage('system', 'progress', '🔄 正在重试...');
+                const result = await apiCall('POST', `/api/mix/${taskId}/retry`);
+                if (!result || !result.task_id) throw new Error('重试失败');
+                this.currentTaskId = result.task_id;
+                this.saveLocalState();
+                this.syncSessionMeta();
+                this.updateLastSystemMessage('progress', '⏳ AI 导演正在重新分析素材...');
+                this.startPolling(result.task_id);
+            } catch (e) {
+                this.processing = false;
+                const msg = e.data?.error?.message || '重试失败';
+                this.updateLastSystemMessage('error', msg);
+            }
+        },
+
+        // --- Cancel Task ---
+        async cancelTask() {
+            if (!this.currentTaskId) return;
+            try {
+                const result = await apiCall('POST', `/api/mix/${this.currentTaskId}/cancel`);
+                clearInterval(this.pollTimer);
+                this.pollTimer = null;
+                this.processing = false;
+                this.updateLastSystemMessage('text', '⛔ 任务已取消');
+            } catch (e) {
+                const msg = e.data?.error?.message || '取消失败';
+                this.updateLastSystemMessage('error', msg);
+            }
+        },
+
+        // --- TTS Preview ---
+        previewTTS() {
+            if (!this.params.tts_voice) return;
+            // Stop any currently playing preview
+            if (this.previewAudio) {
+                this.previewAudio.pause();
+                this.previewAudio = null;
+            }
+            const url = `/static/voice_previews/${this.params.tts_voice}.mp3`;
+            this.previewAudio = new Audio(url);
+            this.previewAudio.play().catch(err => {
+                console.error('TTS preview playback failed:', err);
+            });
+        },
+
+        // --- Submit Review ---
+        async submitReview(taskId) {
+            try {
+                await apiCall('POST', `/api/mix/${taskId}/submit-review`);
+                this.addMessage('system', 'text', '✅ 已提交审核');
+            } catch (e) {
+                const msg = e.data?.error?.message || '提交失败';
+                this.addMessage('system', 'error', msg);
+            }
+        },
+    };
+}
+
+// Open asset picker triggers load
+document.addEventListener('alpine:init', () => {
+    Alpine.effect(() => {
+        const data = Alpine.store('_mixChat');
+    });
+});
+</script>
+
+<style>
+    /* Override main-area for full-height chat */
+    .main-area > main {
+        padding: 0 !important;
+    }
+</style>
+{% endblock %}

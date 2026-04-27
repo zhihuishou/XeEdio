@@ -22,8 +22,8 @@ ALLOWED_FORMATS: dict[str, list[str]] = {
 # Valid categories
 VALID_CATEGORIES = {"talent_speaking", "product", "pexels_broll"}
 
-# Default max upload size (500MB)
-DEFAULT_MAX_SIZE = 500 * 1024 * 1024
+# Default max upload size (2GB)
+DEFAULT_MAX_SIZE = 2 * 1024 * 1024 * 1024
 
 # Storage base path
 STORAGE_BASE = "storage/assets"

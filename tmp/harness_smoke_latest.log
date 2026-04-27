@@ -1,0 +1,66 @@
+[smoke] login ok
+[smoke] create attempt=1
+[smoke] task_id=034c5284-17fb-4df7-9b0d-524a2a7e79e6
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=encoding videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=video_done phase=done videos=2
+[smoke] winner task=034c5284-17fb-4df7-9b0d-524a2a7e79e6
+[smoke] recompose_timeline status=200 body={"task_id":"034c5284-17fb-4df7-9b0d-524a2a7e79e6","status":"processing","message":"已开始仅重跑时间线"}
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=processing phase=ai_directing videos=0
+[poll] task=034c5284-17fb-4df7-9b0d-524a2a7e79e6 status=video_done phase=done videos=2
+[smoke] RESULT=PASS create+timeline-only both video_done with 2 outputs
+[smoke] REPORT_JSON {"started_at": "2026-04-27T18:35:47.412705", "base": "http://127.0.0.1:8000", "assets": ["d575ad50-1e19-4731-9f44-7cc7afcd1afb"], "attempts": [{"attempt": 1, "task_id": "034c5284-17fb-4df7-9b0d-524a2a7e79e6", "timed_out": false, "final": {"task_id": "034c5284-17fb-4df7-9b0d-524a2a7e79e6", "status": "video_done", "progress": "处理完成", "execution_phase": "done", "video_paths": ["storage/tasks/034c5284-17fb-4df7-9b0d-524a2a7e79e6/output-1.mp4", "storage/tasks/034c5284-17fb-4df7-9b0d-524a2a7e79e6/output-2.mp4"], "video_resolution": "1080x1920", "video_duration": 40.866341, "video_file_size": 20246588, "error_message": null, "ai_director_used": true}}], "winner_task_id": "034c5284-17fb-4df7-9b0d-524a2a7e79e6", "result": "pass", "timeline_only": {"task_id": "034c5284-17fb-4df7-9b0d-524a2a7e79e6", "timed_out": false, "final": {"task_id": "034c5284-17fb-4df7-9b0d-524a2a7e79e6", "status": "video_done", "progress": "处理完成", "execution_phase": "done", "video_paths": ["storage/tasks/034c5284-17fb-4df7-9b0d-524a2a7e79e6/output-1.mp4", "storage/tasks/034c5284-17fb-4df7-9b0d-524a2a7e79e6/output-2.mp4"], "video_resolution": "1080x1920", "video_duration": 27.587696, "video_file_size": 20721929, "error_message": null, "ai_director_used": true}}, "finished_at": "2026-04-27T18:38:41.863743"}

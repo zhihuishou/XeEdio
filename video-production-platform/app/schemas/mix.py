@@ -1,4 +1,6 @@
 """Pydantic schemas for smart video mixing service."""
+from __future__ import annotations
+
 
 from typing import Optional
 
@@ -10,12 +12,14 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class MixCreateRequest(BaseModel):
-    """Request body for creating a mix task."""
+    """Request body for creating a mix task.
 
-    topic: str = Field(..., min_length=1, max_length=200, description="视频主题")
-    a_roll_asset_ids: list[str] = Field(default=[], description="A-Roll 素材 ID（模式1/2）")
-    b_roll_asset_ids: list[str] = Field(default=[], description="B-Roll 素材 ID（模式1/2）")
-    asset_ids: list[str] = Field(default=[], description="素材 ID 列表（模式3：纯素材，不分 A/B）")
+    Uses ``mixing_mode="auto"`` which automatically routes to the optimal
+    pipeline (text-driven or vision-driven) based on asset analysis.
+    """
+
+    topic: str = Field(..., min_length=1, max_length=2000, description="视频主题")
+    asset_ids: list[str] = Field(default=[], description="素材 ID 列表")
     aspect_ratio: str = Field(
         default="9:16",
         pattern=r"^(16:9|9:16|1:1)$",
@@ -26,24 +30,18 @@ class MixCreateRequest(BaseModel):
         pattern=r"^(none|fade_in|fade_out|slide_in|slide_out|shuffle)$",
         description="转场效果",
     )
-    clip_duration: int = Field(default=5, ge=2, le=15, description="片段时长（秒）")
-    concat_mode: str = Field(
-        default="random",
-        pattern=r"^(random|sequential)$",
-        description="拼接模式：random | sequential",
-    )
-    video_count: int = Field(default=1, ge=1, le=5, description="输出视频数量")
+    video_count: int = Field(default=1, ge=1, le=10, description="输出视频数量")
     max_output_duration: int = Field(default=60, ge=15, le=300, description="每段输出视频最大时长（秒）")
     tts_text: Optional[str] = Field(default=None, description="TTS 配音文本（可选）")
     tts_voice: Optional[str] = Field(default=None, description="TTS 语音角色（可选）")
     bgm_enabled: bool = Field(default=False, description="是否启用背景音乐")
     bgm_asset_id: Optional[str] = Field(default=None, description="BGM 素材 ID（None 表示随机）")
     bgm_volume: float = Field(default=0.2, ge=0.0, le=1.0, description="BGM 音量比例")
-    director_prompt: Optional[str] = Field(default=None, max_length=500, description="AI 编导自定义指令（可选）")
+    director_prompt: Optional[str] = Field(default=None, max_length=2000, description="AI 编导自定义指令（可选）")
     mixing_mode: str = Field(
-        default="pure_mix",
-        pattern=r"^(pure_mix|mix_with_script|broll_voiceover|montage)$",
-        description="混剪模式：pure_mix | mix_with_script | broll_voiceover | montage",
+        default="auto",
+        pattern=r"^(auto)$",
+        description="混剪模式。仅支持 'auto'，系统根据素材分析自动路由到最优 pipeline。",
     )
     subtitle_enabled: bool = Field(default=False, description="是否开启字幕（需先启用 TTS）")
 
@@ -62,6 +60,7 @@ class MixStatusResponse(BaseModel):
     task_id: str
     status: str
     progress: Optional[str] = None
+    execution_phase: Optional[str] = None
     video_paths: Optional[list[str]] = None
     video_resolution: Optional[str] = None
     video_duration: Optional[float] = None
@@ -146,3 +145,83 @@ class KeywordGenerateResponse(BaseModel):
     """Response with generated keywords."""
 
     keywords: list[str]
+
+
+# ---------------------------------------------------------------------------
+# 意图解析 — Intent Parsing
+# ---------------------------------------------------------------------------
+
+class ParseIntentRequest(BaseModel):
+    """Request body for intent parsing preview."""
+
+    director_prompt: str = Field(
+        default="",
+        max_length=2000,
+        description="用户自然语言指令",
+    )
+
+
+class ParseIntentResponse(BaseModel):
+    """Response with extracted mixing parameters."""
+
+    strip_audio: bool = False
+    video_count: int = 1
+    max_output_duration: int = 60
+    aspect_ratio: str = "9:16"
+    bgm_enabled: bool = False
+    subtitle_font: Optional[str] = None
+    tts_text: Optional[str] = None
+    editing_style: Optional[str] = None
+    fade_out: bool = True
+    fade_out_duration: float = 0.3
+
+
+# ---------------------------------------------------------------------------
+# 会话与消息持久化
+# ---------------------------------------------------------------------------
+
+class MixSessionCreateRequest(BaseModel):
+    title: Optional[str] = Field(default="未命名会话", max_length=200)
+
+
+class MixSessionResponse(BaseModel):
+    session_id: str
+    title: str
+    last_task_id: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class MixSessionListResponse(BaseModel):
+    items: list[MixSessionResponse]
+
+
+class MixSessionMessageItem(BaseModel):
+    id: str
+    sequence: int
+    sender: str
+    type: str
+    content: Optional[str] = None
+    extra: Optional[dict] = None
+    created_at: Optional[str] = None
+
+
+class MixSessionDetailResponse(BaseModel):
+    session_id: str
+    title: str
+    last_task_id: Optional[str] = None
+    messages: list[MixSessionMessageItem]
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class MixSessionMessageCreateRequest(BaseModel):
+    sender: str = Field(..., pattern=r"^(user|system)$")
+    type: str = Field(..., max_length=50)
+    content: Optional[str] = Field(default="")
+    extra: Optional[dict] = None
+
+
+class MixSessionUpsertRequest(BaseModel):
+    title: Optional[str] = Field(default=None, max_length=200)
+    last_task_id: Optional[str] = None

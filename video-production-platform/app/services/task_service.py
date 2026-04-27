@@ -1,5 +1,7 @@
 """Task service with state machine and lifecycle management."""
 
+from __future__ import annotations
+
 from sqlalchemy.orm import Session
 
 from app.models.database import Task, generate_uuid, utcnow

@@ -1,4 +1,6 @@
 """Copywriting generation, editing, and confirmation API endpoints."""
+from __future__ import annotations
+
 
 import logging
 

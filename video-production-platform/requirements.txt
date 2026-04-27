@@ -9,6 +9,7 @@ chromadb==0.4.22
 httpx==0.25.2
 python-multipart==0.0.6
 edge-tts==6.1.9
+moviepy>=2.1.0
 mutagen==1.47.0
 hypothesis==6.92.2
 pytest==7.4.3

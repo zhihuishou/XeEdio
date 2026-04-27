@@ -12,13 +12,29 @@ import httpx
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.models.database import User, get_db
+from app.models.database import (
+    MixConversationMessage,
+    MixConversationSession,
+    User,
+    generate_uuid,
+    get_db,
+    utcnow,
+)
 from app.schemas.mix import (
     KeywordGenerateRequest,
     KeywordGenerateResponse,
     MixCreateRequest,
     MixCreateResponse,
+    MixSessionCreateRequest,
+    MixSessionDetailResponse,
+    MixSessionListResponse,
+    MixSessionMessageCreateRequest,
+    MixSessionMessageItem,
+    MixSessionResponse,
+    MixSessionUpsertRequest,
     MixStatusResponse,
+    ParseIntentRequest,
+    ParseIntentResponse,
     PexelsDownloadRequest,
     PexelsDownloadResponse,
     PexelsSearchRequest,
@@ -28,6 +44,7 @@ from app.schemas.mix import (
     SubmitReviewResponse,
 )
 from app.services.external_config import ExternalConfig
+from app.services.intent_parsing_service import IntentParsingService, ParsedIntent
 from app.services.mixing_service import MixingService
 from app.services.pexels_service import PexelsService
 from app.utils.auth import require_role
@@ -36,6 +53,34 @@ from app.utils.errors import AppError, ErrorCode
 logger = logging.getLogger("app.mix")
 
 router = APIRouter(prefix="/api/mix", tags=["mix"])
+
+
+def _session_to_response(session: MixConversationSession) -> MixSessionResponse:
+    return MixSessionResponse(
+        session_id=session.id,
+        title=session.title,
+        last_task_id=session.last_task_id,
+        created_at=session.created_at.isoformat() if session.created_at else None,
+        updated_at=session.updated_at.isoformat() if session.updated_at else None,
+    )
+
+
+def _message_to_item(msg: MixConversationMessage) -> MixSessionMessageItem:
+    extra = None
+    if msg.extra_json:
+        try:
+            extra = json.loads(msg.extra_json)
+        except Exception:
+            extra = None
+    return MixSessionMessageItem(
+        id=msg.id,
+        sequence=msg.sequence,
+        sender=msg.sender,
+        type=msg.message_type,
+        content=msg.content,
+        extra=extra,
+        created_at=msg.created_at.isoformat() if msg.created_at else None,
+    )
 
 
 # ------------------------------------------------------------------
@@ -56,6 +101,27 @@ def create_mix(
         status=task.status,
         message="混剪任务已创建",
     )
+
+
+# ------------------------------------------------------------------
+# POST /api/mix/parse-intent
+# ------------------------------------------------------------------
+
+@router.post("/parse-intent", response_model=ParseIntentResponse)
+def parse_intent(
+    body: ParseIntentRequest,
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    """Parse natural language prompt into structured mixing parameters.
+
+    Returns default values if prompt is empty or LLM fails.
+    """
+    service = IntentParsingService()
+    if not body.director_prompt or not body.director_prompt.strip():
+        result = ParsedIntent.defaults()
+    else:
+        result = service.parse_intent(body.director_prompt)
+    return ParseIntentResponse(**result.to_dict())
 
 
 # ------------------------------------------------------------------
@@ -112,6 +178,196 @@ def retry_mix(
         status=task.status,
         message="已重新开始混剪",
     )
+
+
+# ------------------------------------------------------------------
+# POST /api/mix/{task_id}/recompose
+# ------------------------------------------------------------------
+
+@router.post("/{task_id}/recompose", response_model=RetryResponse)
+def recompose_mix(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    """Re-run mixing with the same stored params (e.g. from video_done)."""
+    service = MixingService(db)
+    task = service.recompose(task_id)
+    return RetryResponse(
+        task_id=task.id,
+        status=task.status,
+        message="已重新开始混剪",
+    )
+
+
+# ------------------------------------------------------------------
+# POST /api/mix/{task_id}/recompose-timeline
+# ------------------------------------------------------------------
+
+@router.post("/{task_id}/recompose-timeline", response_model=RetryResponse)
+def recompose_timeline_mix(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    """Re-run only timeline recomposition; skip post-processing passes."""
+    service = MixingService(db)
+    task = service.recompose_timeline_only(task_id)
+    return RetryResponse(
+        task_id=task.id,
+        status=task.status,
+        message="已开始仅重跑时间线",
+    )
+
+
+# ------------------------------------------------------------------
+# POST /api/mix/{task_id}/cancel
+# ------------------------------------------------------------------
+
+@router.post("/{task_id}/cancel")
+def cancel_mix(
+    task_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    """Cancel a processing mixing task."""
+    service = MixingService(db)
+    task = service.cancel(task_id)
+    return {"task_id": task.id, "status": task.status, "message": "任务已取消"}
+
+
+# ------------------------------------------------------------------
+# 会话持久化 API
+# ------------------------------------------------------------------
+
+@router.get("/sessions", response_model=MixSessionListResponse)
+def list_sessions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    sessions = (
+        db.query(MixConversationSession)
+        .filter(MixConversationSession.user_id == current_user.id)
+        .order_by(MixConversationSession.updated_at.desc())
+        .all()
+    )
+    return MixSessionListResponse(items=[_session_to_response(s) for s in sessions])
+
+
+@router.post("/sessions", response_model=MixSessionResponse)
+def create_session(
+    body: MixSessionCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    now = utcnow()
+    session = MixConversationSession(
+        id=generate_uuid(),
+        user_id=current_user.id,
+        title=(body.title or "未命名会话").strip() or "未命名会话",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return _session_to_response(session)
+
+
+@router.get("/sessions/{session_id}", response_model=MixSessionDetailResponse)
+def get_session_detail(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    session = (
+        db.query(MixConversationSession)
+        .filter(
+            MixConversationSession.id == session_id,
+            MixConversationSession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not session:
+        raise AppError(message="会话不存在", error_code=ErrorCode.NOT_FOUND)
+    return MixSessionDetailResponse(
+        session_id=session.id,
+        title=session.title,
+        last_task_id=session.last_task_id,
+        messages=[_message_to_item(m) for m in session.messages],
+        created_at=session.created_at.isoformat() if session.created_at else None,
+        updated_at=session.updated_at.isoformat() if session.updated_at else None,
+    )
+
+
+@router.post("/sessions/{session_id}/messages", response_model=MixSessionMessageItem)
+def append_session_message(
+    session_id: str,
+    body: MixSessionMessageCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    session = (
+        db.query(MixConversationSession)
+        .filter(
+            MixConversationSession.id == session_id,
+            MixConversationSession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not session:
+        raise AppError(message="会话不存在", error_code=ErrorCode.NOT_FOUND)
+    last_msg = (
+        db.query(MixConversationMessage)
+        .filter(MixConversationMessage.session_id == session_id)
+        .order_by(MixConversationMessage.sequence.desc())
+        .first()
+    )
+    next_seq = (last_msg.sequence + 1) if last_msg else 1
+    msg = MixConversationMessage(
+        id=generate_uuid(),
+        session_id=session_id,
+        sequence=next_seq,
+        sender=body.sender,
+        message_type=body.type,
+        content=body.content or "",
+        extra_json=json.dumps(body.extra, ensure_ascii=False) if body.extra is not None else None,
+        created_at=utcnow(),
+    )
+    session.updated_at = utcnow()
+    db.add(msg)
+    db.add(session)
+    db.commit()
+    db.refresh(msg)
+    return _message_to_item(msg)
+
+
+@router.put("/sessions/{session_id}", response_model=MixSessionResponse)
+def update_session(
+    session_id: str,
+    body: MixSessionUpsertRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    session = (
+        db.query(MixConversationSession)
+        .filter(
+            MixConversationSession.id == session_id,
+            MixConversationSession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not session:
+        raise AppError(message="会话不存在", error_code=ErrorCode.NOT_FOUND)
+    if body.title is not None:
+        session.title = body.title.strip() or session.title
+    if body.last_task_id is not None:
+        session.last_task_id = body.last_task_id
+    session.updated_at = utcnow()
+    db.add(session)
+    db.commit()
+    db.refresh(session)
+    return _session_to_response(session)
 
 
 # ------------------------------------------------------------------

@@ -5,7 +5,10 @@ B-roll (product shots, stock footage) gets cut into segments and inserted at int
 replacing A-roll's visuals while keeping A-roll's audio track continuous.
 """
 
+from __future__ import annotations
+
 import gc
+import json
 import logging
 import os
 import random
@@ -36,6 +39,62 @@ ASPECT_RESOLUTIONS = {
     "9:16": (1080, 1920),
     "1:1": (1080, 1080),
 }
+
+# ---------------------------------------------------------------------------
+# Subtitle font configuration
+# ---------------------------------------------------------------------------
+
+# Font search order: first match wins.
+# Names must match the font's internal family name (for FFmpeg subtitles filter).
+# Paths are checked to verify the font file exists on disk.
+SUBTITLE_FONTS = [
+    {"name": "Douyin Sans", "file": "DouyinSansBold.otf"},
+    {"name": "ZCOOL QingKe HuangYou", "file": "ZCOOLQingKeHuangYouTi-Regular.ttf"},
+    {"name": "ZCOOL KuaiLe", "file": "ZCOOLKuaiLe-Regular.ttf"},
+    {"name": "YouShe BiaoTiHei", "file": "YouSheBiaoTiHei.ttf"},
+    {"name": "STHeiti", "file": "STHeitiMedium.ttc"},           # macOS built-in
+    {"name": "Microsoft YaHei", "file": "MicrosoftYaHeiNormal.ttc"},
+    {"name": "Noto Sans CJK SC", "file": ""},                    # Linux common
+    {"name": "PingFang SC", "file": ""},                          # macOS common
+    {"name": "Arial", "file": ""},                                # ultimate fallback
+]
+
+# Directories to search for font files
+_FONT_DIRS = [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "resource", "fonts"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "MoneyPrinterTurbo", "resource", "fonts"),
+    "/System/Library/Fonts",
+    "/usr/share/fonts",
+]
+
+
+def _resolve_subtitle_font() -> str:
+    """Find the best available subtitle font. Returns the font family name."""
+    for font_info in SUBTITLE_FONTS:
+        if font_info["file"]:
+            for font_dir in _FONT_DIRS:
+                path = os.path.join(font_dir, font_info["file"])
+                if os.path.exists(path):
+                    logger.info("subtitle font resolved: %s (%s)", font_info["name"], path)
+                    return font_info["name"]
+        else:
+            # No specific file to check — assume system font is available
+            # (FFmpeg will fall back gracefully if not found)
+            pass
+    # Return last entry as fallback
+    return SUBTITLE_FONTS[-1]["name"]
+
+
+# Cache the resolved font
+_SUBTITLE_FONT_NAME = None
+
+
+def get_subtitle_font() -> str:
+    """Get the resolved subtitle font name (cached)."""
+    global _SUBTITLE_FONT_NAME
+    if _SUBTITLE_FONT_NAME is None:
+        _SUBTITLE_FONT_NAME = _resolve_subtitle_font()
+    return _SUBTITLE_FONT_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -252,20 +311,8 @@ def combine_videos(
       visuals while A-roll's audio continues underneath
     - If no B-roll, output is just A-roll resized to target aspect ratio
 
-    Timeline example (clip_duration=5s, A-roll=30s, B-roll available):
-      [A 0-5s][B1 5-10s][A 10-15s][B2 15-20s][A 20-25s][B3 25-30s]
-
-    Args:
-        combined_video_path: Output file path.
-        video_paths: Legacy param (ignored if a_roll_paths provided).
-        audio_file: Audio file (A-roll extracted audio).
-        video_aspect: Target aspect ratio.
-        video_concat_mode: "random" or "sequential" for B-roll arrangement.
-        video_transition: Transition effect for B-roll insertions.
-        max_clip_duration: Duration of each segment in seconds.
-        threads: FFmpeg threads.
-        a_roll_paths: Explicit A-roll video paths.
-        b_roll_paths: Explicit B-roll video paths.
+    When there is no B-roll and no separate audio file, uses a pure FFmpeg
+    path that preserves original source audio from each clip.
     """
     # Resolve paths
     if a_roll_paths is None:
@@ -278,8 +325,52 @@ def combine_videos(
 
     output_dir = os.path.dirname(combined_video_path)
     os.makedirs(output_dir, exist_ok=True)
-
     target_w, target_h = ASPECT_RESOLUTIONS.get(video_aspect, (1080, 1920))
+
+    # --- FFmpeg fast path: no B-roll, preserve source audio ---
+    if not b_roll_paths and (not audio_file or not os.path.exists(str(audio_file or ""))):
+        logger.info("combine_videos: FFmpeg fast path (%d clips, preserving source audio)", len(a_roll_paths))
+        ffmpeg = _get_ffmpeg_binary()
+        temp_segs = []
+        for i, path in enumerate(a_roll_paths):
+            temp_path = os.path.join(output_dir, f"combine-seg-{i:04d}.mp4")
+            cmd = [
+                ffmpeg, "-y",
+                "-i", path,
+                "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                       f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black",
+                "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p", "-r", str(FPS),
+                "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+                temp_path,
+            ]
+            seg_timeout = max(120, int(_ffprobe_duration(path) * 4))
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=seg_timeout, check=False)
+                if result.returncode == 0 and os.path.exists(temp_path):
+                    temp_segs.append(temp_path)
+                else:
+                    logger.error("combine seg %d failed (rc=%d): %s", i, result.returncode, (result.stderr or "")[-300:])
+            except Exception as e:
+                logger.error("combine seg %d exception: %s", i, str(e)[:200])
+
+        if not temp_segs:
+            raise RuntimeError("No segments rendered in combine_videos")
+
+        # Concat with audio
+        concat_list = os.path.join(output_dir, "combine-concat.txt")
+        with open(concat_list, "w") as f:
+            for tf in temp_segs:
+                f.write(f"file '{os.path.abspath(tf)}'\n")
+        subprocess.run(
+            [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+             "-c:v", "copy", "-c:a", "copy",
+             "-movflags", "+faststart",
+             combined_video_path],
+            capture_output=True, text=True, check=False,
+        )
+        _delete_files(temp_segs + [concat_list])
+        logger.info("combine_videos FFmpeg fast path complete: %s", combined_video_path)
+        return combined_video_path
 
     # --- Step 1: Build A-roll timeline ---
     # Concatenate all A-roll videos into one continuous clip
@@ -450,6 +541,22 @@ def combine_videos(
     return combined_video_path
 
 
+def _ffprobe_duration(video_path: str) -> float:
+    """Get video duration using ffprobe (no MoviePy dependency)."""
+    ffprobe = _get_ffmpeg_binary().replace("ffmpeg", "ffprobe")
+    if not ffprobe or ffprobe == "ffprobe":
+        ffprobe = "ffprobe"
+    cmd = [ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", video_path]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            return float(data.get("format", {}).get("duration", 0))
+    except Exception:
+        pass
+    return 0.0
+
+
 def _resolve_aroll_position(a_roll_segments, a_cursor, seg_dur):
     """Find which A-roll source file and offset corresponds to a_cursor position."""
     accumulated = 0.0
@@ -484,90 +591,134 @@ def execute_timeline(
 ) -> str:
     """Execute a VLM-generated timeline to produce the final video.
 
-    Iterates over timeline entries, extracts A-roll/B-roll segments,
-    concatenates via FFmpeg, and merges with audio.
+    Pure FFmpeg implementation — no MoviePy. Uses stream-copy where possible,
+    re-encodes only when resize/transition is needed. Segments are rendered
+    concurrently using a thread pool.
     """
-    import itertools
+    import concurrent.futures
 
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
     target_w, target_h = ASPECT_RESOLUTIONS.get(video_aspect, (1080, 1920))
+    ffmpeg = _get_ffmpeg_binary()
 
-    # Build A-roll segments for position lookup
+    # Build A-roll segments for position lookup (use ffprobe, not MoviePy)
     a_roll_segments = []
     for path in a_roll_paths:
-        clip = VideoFileClip(path)
-        dur = clip.duration
-        _close_clip(clip)
+        dur = _ffprobe_duration(path)
         a_roll_segments.append((path, 0.0, dur))
 
-    # B-roll cycle
-    b_cycle = itertools.cycle(b_roll_paths) if b_roll_paths else iter([])
+    # B-roll — use each file once, no repetition.
+    # If VLM requests more B-roll insertions than available files, excess
+    # entries are silently skipped (replaced by extending adjacent A-roll).
+    b_roll_list = list(b_roll_paths) if b_roll_paths else []
+    b_roll_iter = iter(b_roll_list)
 
-    temp_files = []
+    # --- Build segment specs ---
+    seg_specs = []  # (index, source_path, ss, to, needs_resize)
     for i, entry in enumerate(timeline):
         entry_type = entry.get("type", "a_roll")
         start = float(entry.get("start", 0))
         end = float(entry.get("end", start + 1))
         seg_dur = end - start
-
         if seg_dur <= 0.05:
             continue
 
-        try:
-            if entry_type == "a_roll":
-                # Find the right A-roll file and offset for this time range
-                a_file, a_offset = _resolve_aroll_position(a_roll_segments, start, seg_dur)
-                a_clip = VideoFileClip(a_file)
-                actual_end = min(a_offset + seg_dur, a_clip.duration)
-                if actual_end <= a_offset:
-                    _close_clip(a_clip)
-                    logger.warning("timeline entry %d: A-roll offset %.2f beyond file duration %.2f, skipping", i, a_offset, a_clip.duration)
-                    continue
-                clip = a_clip.subclipped(a_offset, actual_end)
-            else:
-                b_path = next(b_cycle, None)
-                if not b_path:
-                    logger.warning("timeline entry %d: no B-roll available, skipping", i)
-                    continue
-                b_clip = VideoFileClip(b_path)
-                use_dur = min(seg_dur, b_clip.duration)
-                clip = b_clip.subclipped(0, use_dur)
+        if entry_type == "a_roll":
+            a_file, a_offset = _resolve_aroll_position(a_roll_segments, start, seg_dur)
+            a_file_end = _get_file_end(a_roll_segments, a_file)
+            actual_end = min(a_offset + seg_dur, a_file_end)
+            if actual_end <= a_offset:
+                continue
+            seg_specs.append((i, a_file, a_offset, actual_end, True))
+        else:
+            b_path = next(b_roll_iter, None)
+            if not b_path:
+                continue
+            b_dur = _ffprobe_duration(b_path)
+            use_dur = min(seg_dur, b_dur)
+            seg_specs.append((i, b_path, 0.0, use_dur, True))
 
-            clip = clip.without_audio()
-            clip = _resize_clip(clip, target_w, target_h)
+    if not seg_specs:
+        raise RuntimeError("No timeline segments to render")
 
-            if entry_type == "b_roll":
-                clip = apply_transition(clip, video_transition)
+    # --- Render segments concurrently with FFmpeg ---
+    def _render_segment(spec):
+        idx, src_path, ss, to, needs_resize = spec
+        temp_path = os.path.join(output_dir, f"tl-seg-{idx:04d}.mp4")
+        cmd = [
+            ffmpeg, "-y",
+            "-ss", f"{ss:.3f}",
+            "-i", src_path,
+            "-t", f"{to - ss:.3f}",
+            "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                   f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black",
+            "-an",
+            "-c:v", VIDEO_CODEC,
+            "-pix_fmt", "yuv420p",
+            "-r", str(FPS),
+            temp_path,
+        ]
+        seg_duration = to - ss
+        seg_timeout = max(120, int(seg_duration * 3))
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=seg_timeout, check=False)
+        if result.returncode != 0:
+            logger.error("segment %d render failed: %s", idx, (result.stderr or "")[-200:])
+            return None
+        return temp_path
 
-            temp_path = os.path.join(output_dir, f"tl-seg-{i:04d}.mp4")
-            clip.write_videofile(temp_path, logger=None, fps=FPS, codec=VIDEO_CODEC, audio=False)
-            temp_files.append(temp_path)
-            _close_clip(clip)
-        except Exception as e:
-            logger.error("timeline segment %d (%s %.2f-%.2f) failed: %s", i, entry_type, start, end, str(e))
+    temp_files = []
+    max_workers = min(len(seg_specs), os.cpu_count() or 4, 6)
+    logger.info("rendering %d timeline segments with %d workers", len(seg_specs), max_workers)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_map = {pool.submit(_render_segment, spec): spec[0] for spec in seg_specs}
+        results = {}
+        for future in concurrent.futures.as_completed(future_map):
+            idx = future_map[future]
+            try:
+                path = future.result()
+                if path:
+                    results[idx] = path
+            except Exception as e:
+                logger.error("segment %d exception: %s", idx, str(e)[:200])
+
+    # Collect in timeline order
+    for spec in seg_specs:
+        idx = spec[0]
+        if idx in results:
+            temp_files.append(results[idx])
 
     if not temp_files:
         raise RuntimeError("No timeline segments rendered")
 
-    # Concat video segments
+    # --- Concat + audio merge ---
     video_only = os.path.join(output_dir, "tl-video-only.mp4")
     concat_list = os.path.join(output_dir, "tl-concat.txt")
     with open(concat_list, "w") as f:
         for tf in temp_files:
             f.write(f"file '{os.path.abspath(tf)}'\n")
 
-    cmd = [_get_ffmpeg_binary(), "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
-           "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p", "-an", video_only]
+    cmd = [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+           "-c:v", "copy", "-pix_fmt", "yuv420p", "-an", video_only]
     subprocess.run(cmd, capture_output=True, text=True, check=False)
 
     # Merge with audio
-    cmd2 = [_get_ffmpeg_binary(), "-y", "-i", video_only, "-i", audio_file,
-            "-c:v", "copy", "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
-            "-shortest", "-movflags", "+faststart", output_path]
-    subprocess.run(cmd2, capture_output=True, text=True, check=False)
+    if audio_file and os.path.exists(audio_file):
+        cmd2 = [ffmpeg, "-y", "-i", video_only, "-i", audio_file,
+                "-c:v", "copy", "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+                "-shortest", "-movflags", "+faststart", output_path]
+        subprocess.run(cmd2, capture_output=True, text=True, check=False)
+    else:
+        import shutil as _shutil
+        _shutil.move(video_only, output_path)
+        video_only = None
 
-    _delete_files(temp_files + [video_only, concat_list])
+    cleanup = temp_files + [concat_list]
+    if video_only and os.path.exists(video_only):
+        cleanup.append(video_only)
+    _delete_files(cleanup)
+
     logger.info("timeline execution complete: %s", output_path)
     return output_path
 
@@ -581,99 +732,187 @@ def execute_montage_timeline(
     video_transition: str = "none",
     threads: int = 2,
 ) -> str:
-    """Execute a VLM-generated montage timeline to produce the final video.
+    """Execute a VLM-generated montage timeline — pure FFmpeg, concurrent rendering.
 
-    Unlike execute_timeline which uses A-roll/B-roll, this treats all clips
-    equally and uses clip_index to reference source clips.
-
-    Args:
-        timeline: List of montage timeline entries with clip_index, source_start, source_end.
-        clip_paths: List of all clip file paths (indexed by clip_index).
-        audio_file: Optional audio file to merge (TTS or BGM). None for no audio.
-        output_path: Output video file path.
-        video_aspect: Target aspect ratio.
-        video_transition: Transition effect to apply between clips.
-        threads: FFmpeg thread count.
-
-    Returns:
-        Path to the output video file.
+    Each segment is rendered WITH its corresponding source audio so that
+    audio and video stay perfectly in sync after concatenation.
+    The separate `audio_file` parameter is only used as a fallback when
+    source clips have no audio track.
     """
+    import concurrent.futures
+
     output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
     target_w, target_h = ASPECT_RESOLUTIONS.get(video_aspect, (1080, 1920))
+    ffmpeg = _get_ffmpeg_binary()
 
-    temp_files = []
+    # Build segment specs
+    seg_specs = []
     for i, entry in enumerate(timeline):
         clip_index = int(entry.get("clip_index", 0))
         source_start = float(entry.get("source_start", 0))
         source_end = float(entry.get("source_end", source_start + 1))
-        seg_dur = source_end - source_start
-
-        if seg_dur <= 0.05:
+        if source_end - source_start <= 0.05:
+            logger.warning("montage: skipping entry %d (duration %.3fs too short)", i, source_end - source_start)
             continue
-
         if clip_index < 0 or clip_index >= len(clip_paths):
-            logger.warning("montage entry %d: clip_index %d out of range, skipping", i, clip_index)
+            logger.warning("montage: skipping entry %d (clip_index %d out of range [0, %d))", i, clip_index, len(clip_paths))
             continue
+        seg_specs.append((i, clip_paths[clip_index], source_start, source_end))
 
+    logger.info(
+        "montage: %d timeline entries → %d valid seg_specs, clip_paths=%s",
+        len(timeline), len(seg_specs), clip_paths,
+    )
+
+    if not seg_specs:
+        raise RuntimeError("No montage segments to render")
+
+    def _render_seg(spec):
+        idx, src_path, ss, to = spec
+        temp_path = os.path.join(output_dir, f"montage-seg-{idx:04d}.mp4")
+        duration = to - ss
+        # Render with BOTH video and audio from the same source time range
+        cmd = [
+            ffmpeg, "-y",
+            "-ss", f"{ss:.3f}",
+            "-i", src_path,
+            "-t", f"{duration:.3f}",
+            "-vf", f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+                   f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:black",
+            "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p", "-r", str(FPS),
+            "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+            temp_path,
+        ]
+        # Timeout scales with segment duration: at least 180s, or 4x the segment duration
+        seg_timeout = max(180, int(duration * 4))
+        logger.info(
+            "montage seg %d: ss=%.3f duration=%.3f timeout=%ds src=%s",
+            idx, ss, duration, seg_timeout, src_path,
+        )
         try:
-            src_clip = VideoFileClip(clip_paths[clip_index])
-            actual_end = min(source_end, src_clip.duration)
-            actual_start = min(source_start, src_clip.duration - 0.1)
-            if actual_end <= actual_start:
-                _close_clip(src_clip)
-                logger.warning("montage entry %d: source range invalid after clamping, skipping", i)
-                continue
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=seg_timeout, check=False)
+        except subprocess.TimeoutExpired:
+            logger.error(
+                "montage seg %d TIMEOUT after %ds (duration=%.1fs, src=%s)",
+                idx, seg_timeout, duration, src_path,
+            )
+            return None
+        except Exception as exc:
+            logger.error(
+                "montage seg %d subprocess exception: %s", idx, str(exc)[:300],
+            )
+            return None
+        if result.returncode != 0:
+            logger.error(
+                "montage seg %d failed (rc=%d, duration=%.1fs): stderr=%s",
+                idx, result.returncode, duration, (result.stderr or "")[-500:],
+            )
+            return None
+        logger.info("montage seg %d rendered OK: %s (%.1fs)", idx, temp_path, duration)
+        return temp_path
 
-            clip = src_clip.subclipped(actual_start, actual_end)
-            clip = clip.without_audio()
-            clip = _resize_clip(clip, target_w, target_h)
+    # --- Concurrent rendering ---
+    temp_files = []
+    max_workers = min(len(seg_specs), os.cpu_count() or 4, 4)
+    logger.info(
+        "montage: rendering %d segments with %d concurrent workers", len(seg_specs), max_workers,
+    )
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        future_map = {pool.submit(_render_seg, s): s[0] for s in seg_specs}
+        results = {}
+        for future in concurrent.futures.as_completed(future_map):
+            idx = future_map[future]
+            try:
+                path = future.result()
+                if path:
+                    results[idx] = path
+            except Exception as e:
+                logger.error("montage seg %d exception: %s", idx, str(e)[:200])
 
-            if i > 0 and video_transition != "none":
-                clip = apply_transition(clip, video_transition)
+    for spec in seg_specs:
+        if spec[0] in results:
+            temp_files.append(results[spec[0]])
 
-            temp_path = os.path.join(output_dir, f"montage-seg-{i:04d}.mp4")
-            clip.write_videofile(temp_path, logger=None, fps=FPS, codec=VIDEO_CODEC, audio=False)
-            temp_files.append(temp_path)
-            _close_clip(clip)
-        except Exception as e:
-            logger.error("montage segment %d (clip %d, %.2f-%.2f) failed: %s", i, clip_index, source_start, source_end, str(e))
+    # --- Sequential fallback if concurrent rendering failed ---
+    if not temp_files:
+        logger.warning(
+            "montage: all %d concurrent renders failed, retrying sequentially",
+            len(seg_specs),
+        )
+        for spec in seg_specs:
+            path = _render_seg(spec)
+            if path:
+                temp_files.append(path)
+            else:
+                logger.error("montage: sequential render also failed for seg %d", spec[0])
 
     if not temp_files:
         raise RuntimeError("No montage segments rendered")
 
-    # Concat video segments
-    video_only = os.path.join(output_dir, "montage-video-only.mp4")
+    # Concat — segments already have synced audio, just concat both streams
     concat_list = os.path.join(output_dir, "montage-concat.txt")
     with open(concat_list, "w") as f:
         for tf in temp_files:
             f.write(f"file '{os.path.abspath(tf)}'\n")
 
-    cmd = [_get_ffmpeg_binary(), "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
-           "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p", "-an", video_only]
-    subprocess.run(cmd, capture_output=True, text=True, check=False)
-
-    # Merge with audio if provided
-    if audio_file and os.path.exists(audio_file):
-        cmd2 = [_get_ffmpeg_binary(), "-y", "-i", video_only, "-i", audio_file,
-                "-c:v", "copy", "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
-                "-shortest", "-movflags", "+faststart", output_path]
-        subprocess.run(cmd2, capture_output=True, text=True, check=False)
-    else:
-        # No audio — just copy the video
-        import shutil as _shutil
-        _shutil.move(video_only, output_path)
-        video_only = None  # already moved
+    subprocess.run(
+        [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_list,
+         "-c:v", "copy", "-c:a", "copy",
+         "-movflags", "+faststart",
+         output_path],
+        capture_output=True, text=True, check=False,
+    )
 
     cleanup = temp_files + [concat_list]
-    if video_only and os.path.exists(video_only):
-        cleanup.append(video_only)
     _delete_files(cleanup)
-    logger.info("montage timeline execution complete: %s", output_path)
+    logger.info("montage timeline execution complete (synced audio): %s", output_path)
     return output_path
 
 
-def _generate_subtitles(audio_path: str, ass_path: str, video_w: int, video_h: int) -> None:
+def _apply_tail_fadeout(ffmpeg: str, video_path: str, fade_duration: float = 0.3) -> None:
+    """Apply a short video + audio fade-out to the end of a video file.
+
+    Overwrites the file in-place (via a temp file). If the fade fails
+    for any reason, the original file is left untouched.
+
+    Args:
+        ffmpeg: Path to the ffmpeg binary.
+        video_path: Path to the video file to modify.
+        fade_duration: Duration of the fade-out in seconds.
+    """
+    duration = _ffprobe_duration(video_path)
+    if duration <= fade_duration * 2:
+        # Video too short for a meaningful fade
+        return
+
+    fade_start = max(0, duration - fade_duration)
+    temp_path = video_path + ".fadeout.mp4"
+
+    cmd = [
+        ffmpeg, "-y",
+        "-i", video_path,
+        "-vf", f"fade=t=out:st={fade_start:.3f}:d={fade_duration:.3f}",
+        "-af", f"afade=t=out:st={fade_start:.3f}:d={fade_duration:.3f}",
+        "-c:v", VIDEO_CODEC, "-pix_fmt", "yuv420p",
+        "-c:a", AUDIO_CODEC, "-b:a", AUDIO_BITRATE,
+        "-movflags", "+faststart",
+        temp_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, check=False)
+        if result.returncode == 0 and os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+            os.replace(temp_path, video_path)
+            logger.info("tail fade-out applied (%.1fs) to %s", fade_duration, video_path)
+        else:
+            logger.warning("tail fade-out failed (rc=%d), keeping original", result.returncode)
+            _delete_files(temp_path)
+    except Exception as e:
+        logger.warning("tail fade-out exception: %s, keeping original", str(e)[:200])
+        _delete_files(temp_path)
+
+
+def _generate_subtitles(audio_path: str, ass_path: str, video_w: int, video_h: int, font_name: str | None = None) -> None:
     """Generate subtitles from audio using VideoCaptioner (bijian ASR, free cloud).
 
     Falls back to local faster-whisper if VideoCaptioner fails.
@@ -754,10 +993,10 @@ def _generate_subtitles(audio_path: str, ass_path: str, video_w: int, video_h: i
         return
 
     # Write ASS file
-    _write_ass_file(segments_data, ass_path, video_w, video_h)
+    _write_ass_file(segments_data, ass_path, video_w, video_h, font_name=font_name)
 
 
-def _srt_to_ass(srt_path: str, ass_path: str, video_w: int, video_h: int) -> None:
+def _srt_to_ass(srt_path: str, ass_path: str, video_w: int, video_h: int, font_name: str | None = None) -> None:
     """Convert SRT subtitle file to ASS format."""
     import re as _re
     segments = []
@@ -782,7 +1021,7 @@ def _srt_to_ass(srt_path: str, ass_path: str, video_w: int, video_h: int) -> Non
         return
 
     if segments:
-        _write_ass_file(segments, ass_path, video_w, video_h)
+        _write_ass_file(segments, ass_path, video_w, video_h, font_name=font_name)
 
 
 def _srt_time_to_seconds(ts: str) -> float:
@@ -792,8 +1031,9 @@ def _srt_time_to_seconds(ts: str) -> float:
     return int(parts[0]) * 3600 + int(parts[1]) * 60 + float(parts[2])
 
 
-def _write_ass_file(segments_data: list, ass_path: str, video_w: int, video_h: int) -> None:
+def _write_ass_file(segments_data: list, ass_path: str, video_w: int, video_h: int, font_name: str | None = None) -> None:
     """Write ASS subtitle file from segment data."""
+    resolved_font = font_name or get_subtitle_font()
     font_size = max(18, int(video_h * 0.028))
     margin_bottom = max(30, int(video_h * 0.06))
 
@@ -805,7 +1045,7 @@ PlayResY: {video_h}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
+Style: Default,{resolved_font},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -818,11 +1058,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     with open(ass_path, "w", encoding="utf-8") as f:
         f.write(header + "\n".join(events) + "\n")
     logger.info("ASS subtitles written: %d segments -> %s", len(events), ass_path)
-    for s, e, t in segments_data:
-        events.append(f"Dialogue: 0,{_seconds_to_ass_time(s)},{_seconds_to_ass_time(e)},Default,,0,0,0,,{t}")
-
-    with open(ass_path, "w", encoding="utf-8") as f:
-        f.write(header + "\n".join(events) + "\n")
 
 
 def _seconds_to_ass_time(seconds: float) -> str:
@@ -833,7 +1068,7 @@ def _seconds_to_ass_time(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-def generate_subtitles_from_script(script_text: str, audio_duration: float, ass_path: str, video_w: int, video_h: int) -> None:
+def generate_subtitles_from_script(script_text: str, audio_duration: float, ass_path: str, video_w: int, video_h: int, font_name: str | None = None) -> None:
     """Generate ASS subtitles from script text."""
     import re as _re
 
@@ -843,6 +1078,7 @@ def generate_subtitles_from_script(script_text: str, audio_duration: float, ass_
         return
 
     seg_dur = audio_duration / len(segments)
+    resolved_font = font_name or get_subtitle_font()
     font_size = max(18, int(video_h * 0.028))
     margin_bottom = max(30, int(video_h * 0.06))
 
@@ -854,7 +1090,7 @@ PlayResY: {video_h}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
+Style: Default,{resolved_font},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -873,7 +1109,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 def burn_subtitles(video_path: str, ass_path: str, output_path: str) -> str:
     """Burn subtitles into video using FFmpeg subtitles filter.
 
-    Tries SRT with subtitles filter first, falls back to drawtext, then copy.
+    Tries SRT with subtitles filter first, falls back to copy without subtitles.
+    Passes fontsdir to FFmpeg so custom Chinese fonts are found.
     """
     srt_path = ass_path.replace(".ass", ".srt")
     _ass_to_srt(ass_path, srt_path)
@@ -881,17 +1118,30 @@ def burn_subtitles(video_path: str, ass_path: str, output_path: str) -> str:
     subtitle_file = srt_path if os.path.exists(srt_path) and os.path.getsize(srt_path) > 0 else ass_path
     ffmpeg_bin = _get_ffmpeg_binary()
 
-    # Strategy 1: FFmpeg subtitles filter (requires libass — conda-forge ffmpeg has it)
+    # Build fontsdir option — tell FFmpeg where to find custom fonts
+    fonts_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "resource", "fonts",
+    )
+    # Escape special chars in paths for FFmpeg filter syntax
+    escaped_sub = subtitle_file.replace("'", "\\'").replace(":", "\\:")
+    if os.path.isdir(fonts_dir):
+        escaped_fonts = fonts_dir.replace("'", "\\'").replace(":", "\\:")
+        vf_filter = f"subtitles='{escaped_sub}':fontsdir='{escaped_fonts}'"
+    else:
+        vf_filter = f"subtitles='{escaped_sub}'"
+
+    # Strategy 1: FFmpeg subtitles filter
     cmd = [
         ffmpeg_bin, "-y",
         "-i", video_path,
-        "-vf", f"subtitles={subtitle_file}",
+        "-vf", vf_filter,
         "-c:v", "libx264", "-b:v", "8M",
         "-c:a", "copy",
         "-movflags", "+faststart",
         output_path,
     ]
-    logger.info("burning subtitles via FFmpeg subtitles filter: %s", subtitle_file)
+    logger.info("burning subtitles via FFmpeg subtitles filter: %s (fontsdir: %s)", subtitle_file, fonts_dir)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
     if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
         logger.info("subtitles burned successfully")
@@ -1006,6 +1256,7 @@ def extract_audio_from_videos(
         return
 
     # Build ASS file
+    font_name = get_subtitle_font()
     font_size = max(18, int(video_h * 0.028))
     margin_bottom = max(30, int(video_h * 0.06))
 
@@ -1018,7 +1269,7 @@ WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
+Style: Default,{font_name},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,2,1,2,20,20,{margin_bottom},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

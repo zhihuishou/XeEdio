@@ -1,5 +1,7 @@
 """Authentication service: password hashing, JWT token generation and verification."""
 
+from __future__ import annotations
+
 import os
 from datetime import datetime, timedelta, timezone
 

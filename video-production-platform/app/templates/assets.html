@@ -106,11 +106,49 @@
                             </svg>
                         </button>
                     </template>
+                    <!-- Analysis status icon -->
+                    <template x-if="asset.analysis_status">
+                        <span class="absolute bottom-1 left-1 text-xs px-1 py-0.5 rounded flex items-center"
+                            :class="getAnalysisStatusClass(asset.analysis_status)"
+                            :title="getAnalysisStatusLabel(asset.analysis_status)">
+                            <template x-if="asset.analysis_status === 'analyzing'">
+                                <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                                </svg>
+                            </template>
+                            <template x-if="asset.analysis_status === 'completed'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" />
+                                </svg>
+                            </template>
+                            <template x-if="asset.analysis_status === 'failed'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </template>
+                            <template x-if="asset.analysis_status === 'pending'">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10" stroke-width="2" />
+                                    <path stroke-linecap="round" stroke-width="2" d="M12 6v6l4 2" />
+                                </svg>
+                            </template>
+                        </span>
+                    </template>
                 </div>
                 <!-- Info -->
                 <div class="p-2">
                     <p class="text-xs text-gray-800 font-medium truncate" x-text="asset.original_filename"></p>
-                    <p class="text-xs text-gray-500 mt-0.5" x-text="getCategoryLabel(asset.category)"></p>
+                    <div class="flex items-center gap-1 mt-0.5">
+                        <p class="text-xs text-gray-500" x-text="getCategoryLabel(asset.category)"></p>
+                        <!-- Role badge (shown when analysis is completed) -->
+                        <template x-if="asset.analysis_status === 'completed' && asset.analysis_role">
+                            <span class="text-xs px-1.5 py-0 rounded-full font-medium cursor-default relative"
+                                :class="getRoleBadgeClass(asset.analysis_role)"
+                                :title="asset.analysis_description || ''"
+                                x-text="getRoleLabel(asset.analysis_role)"></span>
+                        </template>
+                    </div>
                 </div>
             </div>
         </template>
@@ -153,10 +191,13 @@
                 <!-- File Input -->
                 <div class="mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">选择文件</label>
-                    <input type="file" @change="handleFileSelect($event)"
+                    <input type="file" @change="handleFileSelect($event)" multiple
                         accept="video/mp4,video/quicktime,video/x-msvideo,image/jpeg,image/png,image/webp,audio/mpeg,audio/wav,audio/aac"
                         class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 file:cursor-pointer hover:file:bg-blue-100">
-                    <p class="text-xs text-gray-400 mt-1">支持：mp4/mov/avi、jpg/png/webp、mp3/wav/aac</p>
+                    <p class="text-xs text-gray-400 mt-1">支持：mp4/mov/avi、jpg/png/webp、mp3/wav/aac，可多选</p>
+                    <template x-if="uploadFiles.length > 1">
+                        <p class="text-xs text-blue-600 mt-1" x-text="'已选择 ' + uploadFiles.length + ' 个文件'"></p>
+                    </template>
                 </div>
 
                 <!-- Category Select -->
@@ -174,7 +215,7 @@
                 <!-- Upload Progress -->
                 <div x-show="uploading" class="mb-4">
                     <div class="flex items-center justify-between text-sm text-gray-600 mb-1">
-                        <span>上传中...</span>
+                        <span x-text="uploadStatusText"></span>
                         <span x-text="uploadProgress + '%'"></span>
                     </div>
                     <div class="w-full bg-gray-200 rounded-full h-2">
@@ -189,9 +230,9 @@
                         class="px-4 py-2 border border-gray-300 rounded-md text-sm text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors duration-200">
                         取消
                     </button>
-                    <button @click="uploadAsset()" :disabled="!uploadFile || !uploadCategory || uploading"
+                    <button @click="uploadAsset()" :disabled="uploadFiles.length === 0 || !uploadCategory || uploading"
                         class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 cursor-pointer transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
-                        上传
+                        <span x-text="uploadFiles.length > 1 ? '批量上传' : '上传'"></span>
                     </button>
                 </div>
             </div>
@@ -239,10 +280,11 @@
 
             // Upload state
             showUploadModal: false,
-            uploadFile: null,
+            uploadFiles: [],
             uploadCategory: '',
             uploading: false,
             uploadProgress: 0,
+            uploadStatusText: '上传中...',
 
             // Delete state
             showDeleteModal: false,
@@ -314,46 +356,118 @@
                 return `${m}:${s.toString().padStart(2, '0')}`;
             },
 
+            getAnalysisStatusClass(status) {
+                const classes = {
+                    'analyzing': 'bg-blue-500/80 text-white',
+                    'completed': 'bg-green-500/80 text-white',
+                    'failed': 'bg-red-500/80 text-white',
+                    'pending': 'bg-gray-500/80 text-white',
+                };
+                return classes[status] || '';
+            },
+
+            getAnalysisStatusLabel(status) {
+                const labels = {
+                    'analyzing': '分析中',
+                    'completed': '已分析',
+                    'failed': '分析失败',
+                    'pending': '待分析',
+                };
+                return labels[status] || '';
+            },
+
+            getRoleBadgeClass(role) {
+                const classes = {
+                    'presenter': 'bg-blue-100 text-blue-700',
+                    'product_closeup': 'bg-green-100 text-green-700',
+                    'lifestyle': 'bg-orange-100 text-orange-700',
+                    'transition': 'bg-gray-200 text-gray-600',
+                    'other': 'bg-gray-100 text-gray-500',
+                };
+                return classes[role] || 'bg-gray-100 text-gray-500';
+            },
+
+            getRoleLabel(role) {
+                const labels = {
+                    'presenter': '主讲',
+                    'product_closeup': '产品',
+                    'lifestyle': '生活',
+                    'transition': '过渡',
+                    'other': '其他',
+                };
+                return labels[role] || role;
+            },
+
             handleFileSelect(event) {
-                this.uploadFile = event.target.files[0] || null;
+                this.uploadFiles = Array.from(event.target.files || []);
             },
 
             closeUploadModal() {
                 this.showUploadModal = false;
-                this.uploadFile = null;
+                this.uploadFiles = [];
                 this.uploadCategory = '';
                 this.uploadProgress = 0;
+                this.uploadStatusText = '上传中...';
             },
 
             async uploadAsset() {
-                if (!this.uploadFile || !this.uploadCategory) return;
+                if (this.uploadFiles.length === 0 || !this.uploadCategory) return;
                 this.uploading = true;
                 this.uploadProgress = 0;
 
                 try {
-                    const formData = new FormData();
-                    formData.append('file', this.uploadFile);
-                    formData.append('category', this.uploadCategory);
+                    if (this.uploadFiles.length === 1) {
+                        // Single file — use original endpoint
+                        this.uploadStatusText = '上传中...';
+                        const formData = new FormData();
+                        formData.append('file', this.uploadFiles[0]);
+                        formData.append('category', this.uploadCategory);
 
-                    // Simulate progress
-                    const progressInterval = setInterval(() => {
-                        if (this.uploadProgress < 90) {
-                            this.uploadProgress += 10;
+                        const progressInterval = setInterval(() => {
+                            if (this.uploadProgress < 90) this.uploadProgress += 10;
+                        }, 200);
+
+                        await apiUpload('/api/assets/upload', formData);
+                        clearInterval(progressInterval);
+                        this.uploadProgress = 100;
+
+                        setTimeout(() => {
+                            this.closeUploadModal();
+                            this.uploading = false;
+                            this.loadAssets();
+                            document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '素材上传成功', type: 'success' } }));
+                        }, 500);
+                    } else {
+                        // Batch upload — use batch endpoint
+                        const formData = new FormData();
+                        for (const file of this.uploadFiles) {
+                            formData.append('files', file);
                         }
-                    }, 200);
+                        formData.append('category', this.uploadCategory);
 
-                    await apiUpload('/api/assets/upload', formData);
+                        this.uploadStatusText = `正在上传 ${this.uploadFiles.length} 个文件...`;
+                        const progressInterval = setInterval(() => {
+                            if (this.uploadProgress < 90) this.uploadProgress += 5;
+                        }, 300);
 
-                    clearInterval(progressInterval);
-                    this.uploadProgress = 100;
+                        const result = await apiUpload('/api/assets/upload/batch', formData);
+                        clearInterval(progressInterval);
+                        this.uploadProgress = 100;
 
-                    setTimeout(() => {
-                        this.closeUploadModal();
-                        this.uploading = false;
-                        this.loadAssets();
-                        // Access parent toast
-                        document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: '素材上传成功', type: 'success' } }));
-                    }, 500);
+                        const succeeded = result?.succeeded || 0;
+                        const failed = result?.failed || 0;
+
+                        setTimeout(() => {
+                            this.closeUploadModal();
+                            this.uploading = false;
+                            this.loadAssets();
+                            if (failed === 0) {
+                                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `${succeeded} 个素材上传成功`, type: 'success' } }));
+                            } else {
+                                document.dispatchEvent(new CustomEvent('show-toast', { detail: { message: `${succeeded} 个成功，${failed} 个失败`, type: 'warning' } }));
+                            }
+                        }, 500);
+                    }
                 } catch (e) {
                     this.uploading = false;
                     const msg = e.data?.error?.message || '上传失败';

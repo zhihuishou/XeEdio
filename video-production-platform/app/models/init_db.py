@@ -79,8 +79,8 @@ DEFAULT_CONFIGS = [
     },
     {
         "key": "upload_max_size",
-        "value": "524288000",
-        "description": "素材上传最大文件大小（字节），默认 500MB",
+        "value": "2147483648",
+        "description": "素材上传最大文件大小（字节），默认 2GB",
     },
     {
         "key": "upload_allowed_formats",
