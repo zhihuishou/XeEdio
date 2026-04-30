@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.models.init_db import init_db
-from app.routers import assets, auth, batches, config, copywriting, forbidden_words, mix, pages, reviews, tasks, tts, users
+from app.routers import assets, auth, batches, chat, config, copywriting, forbidden_words, mix, pages, reviews, tasks, tts, users
 from app.utils.errors import register_exception_handlers
 from app.utils.logging import RequestIdMiddleware, setup_logging
 
@@ -67,6 +67,7 @@ app.include_router(forbidden_words.router)
 app.include_router(copywriting.router)
 app.include_router(tts.router)
 app.include_router(mix.router)
+app.include_router(chat.router)
 app.include_router(tasks.router)
 app.include_router(batches.router)
 app.include_router(reviews.router)

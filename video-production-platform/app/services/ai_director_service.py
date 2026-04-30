@@ -21,6 +21,7 @@ from app.services.mixing_engine import combine_videos, execute_montage_timeline
 from app.services.vlm_service import VLMService
 from app.services.asset_analysis_service import AssetAnalysisService
 from app.services.text_driven_editing_service import TextDrivenEditingService
+from app.services.agent_router import AgentRouter
 
 logger = logging.getLogger("app.ai_director_service")
 
@@ -929,19 +930,163 @@ class AIDirectorService:
                     log(f"  Asset {asset_id}: analysis load failed: {str(e)[:200]}")
                     non_presenter_indices.append(i)
 
-        # Determine pipeline choice based on asset composition
+        # Determine fallback pipeline choice based on asset composition
         if presenter_index is not None and non_presenter_indices:
             pipeline_choice = "hybrid"
             analysis_data = presenter_analysis
-            log(f"  → Routing to HYBRID pipeline (presenter at index {presenter_index} + {len(non_presenter_indices)} non-presenter clips)")
+            log(f"  → Fallback routing: HYBRID pipeline (presenter at index {presenter_index} + {len(non_presenter_indices)} non-presenter clips)")
         elif presenter_index is not None:
             pipeline_choice = "text"
             analysis_data = presenter_analysis
-            log(f"  → Routing to TEXT-DRIVEN pipeline (single presenter, no B-roll)")
+            log(f"  → Fallback routing: TEXT-DRIVEN pipeline (single presenter, no B-roll)")
         else:
-            log("  → Routing to VISION-DRIVEN pipeline (no presenter with speech found)")
+            log("  → Fallback routing: VISION-DRIVEN pipeline (no presenter with speech found)")
+
+        # --- NEW: Attempt Agent Router ---
+        import time as _time
+        routing_decision = None
+        routing_method = "fallback"
+        if director_prompt and director_prompt.strip() and asset_ids and analysis_map:
+            try:
+                _router_start = _time.time()
+                router = AgentRouter()
+                asset_summaries = router.build_asset_summaries(
+                    asset_ids, clip_paths, clip_original_filenames, analysis_map
+                )
+                routing_decision = router.route(director_prompt, asset_summaries, analysis_map)
+                _router_elapsed_ms = (_time.time() - _router_start) * 1000
+                if routing_decision:
+                    routing_method = "agent_router"
+                    log(f"  Agent Router succeeded in {_router_elapsed_ms:.0f}ms")
+                    log(f"  Agent Router decision: pipeline={routing_decision.pipeline}, "
+                        f"asset_roles={routing_decision.asset_roles}, "
+                        f"parameters={routing_decision.parameters}")
+                    # Log comparison with fallback
+                    _fallback_pipeline_map = {"text": "text_driven", "hybrid": "hybrid", "vision": "vision_montage"}
+                    _fallback_id = _fallback_pipeline_map.get(pipeline_choice, pipeline_choice)
+                    if routing_decision.pipeline != _fallback_id:
+                        log(f"  ⚡ Agent router chose {routing_decision.pipeline}; "
+                            f"fallback would have chosen {_fallback_id}")
+                else:
+                    log(f"  Agent Router returned None after {_router_elapsed_ms:.0f}ms, "
+                        f"falling back to existing routing")
+            except Exception as e:
+                log(f"  Agent Router failed: {str(e)[:200]}, falling back to existing routing")
+                routing_decision = None
+        else:
+            if not director_prompt or not director_prompt.strip():
+                log("  Agent Router skipped: director_prompt is empty or whitespace")
+            elif not asset_ids:
+                log("  Agent Router skipped: no asset_ids provided")
+            elif not analysis_map:
+                log("  Agent Router skipped: no analysis data available")
+
+        # Write routing decision to file for observability
+        try:
+            from dataclasses import asdict
+            routing_info = {
+                "routing_method": routing_method,
+                "routing_decision": asdict(routing_decision) if routing_decision else None,
+            }
+            routing_info_path = os.path.join(self.output_dir, "routing_decision.json")
+            with open(routing_info_path, "w", encoding="utf-8") as f:
+                json.dump(routing_info, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            log(f"  Failed to write routing_decision.json: {str(e)[:100]}")
 
         # --- Step 2: Execute chosen pipeline ---
+
+        # Dispatch based on Agent Router decision (if available)
+        if routing_decision:
+            if routing_decision.pipeline == "text_driven":
+                # Find the presenter asset from asset_roles
+                presenter_asset_id = None
+                for aid, role in routing_decision.asset_roles.items():
+                    if role == "presenter":
+                        presenter_asset_id = aid
+                        break
+                if presenter_asset_id and presenter_asset_id in (analysis_map or {}):
+                    _presenter_analysis = analysis_map[presenter_asset_id]
+                    return self._run_text_driven(
+                        clip_paths=clip_paths,
+                        analysis=_presenter_analysis,
+                        asset_ids=asset_ids,
+                        clip_original_filenames=clip_original_filenames,
+                        aspect_ratio=aspect_ratio,
+                        transition=transition,
+                        audio_file=audio_file,
+                        max_output_duration=max_output_duration,
+                        progress_callback=progress_callback,
+                        director_prompt=director_prompt,
+                        video_count=video_count,
+                    )
+                else:
+                    log("  ⚠️ Agent Router chose text_driven but no presenter found in asset_roles, falling back")
+
+            elif routing_decision.pipeline in ("vision_montage", "multi_asset_montage"):
+                return self.run_montage_pipeline(
+                    clip_paths=clip_paths,
+                    aspect_ratio=aspect_ratio,
+                    transition=transition,
+                    audio_file=audio_file,
+                    max_output_duration=max_output_duration,
+                    progress_callback=progress_callback,
+                    director_prompt=director_prompt,
+                    asset_ids=asset_ids,
+                    clip_original_filenames=clip_original_filenames,
+                    video_count=video_count,
+                )
+
+            elif routing_decision.pipeline == "hybrid":
+                # Separate assets into presenter and broll based on asset_roles
+                _presenter_aid = None
+                _broll_aids = []
+                for aid, role in routing_decision.asset_roles.items():
+                    if role == "presenter" and _presenter_aid is None:
+                        _presenter_aid = aid
+                    else:
+                        _broll_aids.append(aid)
+
+                if _presenter_aid and asset_ids:
+                    try:
+                        _p_idx = asset_ids.index(_presenter_aid)
+                    except ValueError:
+                        _p_idx = None
+
+                    if _p_idx is not None:
+                        _presenter_path = clip_paths[_p_idx]
+                        _presenter_analysis = analysis_map.get(_presenter_aid)
+                        _broll_paths = [clip_paths[asset_ids.index(aid)]
+                                        for aid in _broll_aids if aid in asset_ids]
+                        _broll_asset_ids = [aid for aid in _broll_aids if aid in asset_ids]
+
+                        if _presenter_analysis:
+                            return self._run_hybrid_pipeline(
+                                presenter_path=_presenter_path,
+                                presenter_analysis=_presenter_analysis,
+                                broll_paths=_broll_paths,
+                                broll_asset_ids=_broll_asset_ids,
+                                aspect_ratio=aspect_ratio,
+                                transition=transition,
+                                audio_file=audio_file,
+                                max_output_duration=max_output_duration,
+                                progress_callback=progress_callback,
+                                director_prompt=director_prompt,
+                                video_count=video_count,
+                            )
+                        else:
+                            log("  ⚠️ Agent Router chose hybrid but presenter analysis unavailable, falling back")
+                    else:
+                        log("  ⚠️ Agent Router chose hybrid but presenter asset_id not in asset_ids, falling back")
+                else:
+                    log("  ⚠️ Agent Router chose hybrid but no presenter in asset_roles, falling back")
+
+            log(f"  ⚠️ Agent Router dispatch failed for pipeline={routing_decision.pipeline}, using fallback routing")
+
+        # Fallback: existing if/else routing (unchanged)
+        if routing_method == "fallback":
+            log(f"  Using fallback routing: pipeline_choice={pipeline_choice}")
+
         if pipeline_choice == "hybrid" and analysis_data and presenter_index is not None:
             presenter_path = clip_paths[presenter_index]
             broll_paths = [clip_paths[i] for i in non_presenter_indices]

@@ -9,12 +9,13 @@ import json
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.models.database import (
     MixConversationMessage,
     MixConversationSession,
+    Task,
     User,
     generate_uuid,
     get_db,
@@ -55,11 +56,18 @@ logger = logging.getLogger("app.mix")
 router = APIRouter(prefix="/api/mix", tags=["mix"])
 
 
-def _session_to_response(session: MixConversationSession) -> MixSessionResponse:
+def _session_to_response(
+    session: MixConversationSession,
+    *,
+    last_message_preview: str | None = None,
+    is_processing: bool = False,
+) -> MixSessionResponse:
     return MixSessionResponse(
         session_id=session.id,
         title=session.title,
         last_task_id=session.last_task_id,
+        last_message_preview=last_message_preview,
+        is_processing=is_processing,
         created_at=session.created_at.isoformat() if session.created_at else None,
         updated_at=session.updated_at.isoformat() if session.updated_at else None,
     )
@@ -81,6 +89,30 @@ def _message_to_item(msg: MixConversationMessage) -> MixSessionMessageItem:
         extra=extra,
         created_at=msg.created_at.isoformat() if msg.created_at else None,
     )
+
+
+def _build_message_preview(msg: MixConversationMessage | None) -> str | None:
+    if not msg:
+        return None
+    content = (msg.content or "").strip()
+    if content:
+        return content[:60] + ("..." if len(content) > 60 else "")
+    if msg.message_type == "asset_upload":
+        try:
+            extra = json.loads(msg.extra_json or "{}")
+            assets = extra.get("assets") or []
+            if isinstance(assets, list):
+                return f"已添加 {len(assets)} 个素材"
+        except Exception:
+            return "已添加素材"
+        return "已添加素材"
+    if msg.message_type == "video_result":
+        return "视频已生成"
+    if msg.message_type == "progress":
+        return "任务处理中"
+    if msg.message_type == "error":
+        return "任务异常"
+    return None
 
 
 # ------------------------------------------------------------------
@@ -242,16 +274,51 @@ def cancel_mix(
 
 @router.get("/sessions", response_model=MixSessionListResponse)
 def list_sessions(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("intern", "operator", "admin")),
 ):
-    sessions = (
+    base_query = (
         db.query(MixConversationSession)
         .filter(MixConversationSession.user_id == current_user.id)
+    )
+    total = base_query.count()
+    offset = (page - 1) * page_size
+    sessions = (
+        base_query
         .order_by(MixConversationSession.updated_at.desc())
+        .offset(offset)
+        .limit(page_size)
         .all()
     )
-    return MixSessionListResponse(items=[_session_to_response(s) for s in sessions])
+    items = []
+    for s in sessions:
+        latest_msg = (
+            db.query(MixConversationMessage)
+            .filter(MixConversationMessage.session_id == s.id)
+            .order_by(MixConversationMessage.sequence.desc())
+            .first()
+        )
+        preview = _build_message_preview(latest_msg)
+        is_processing = False
+        if s.last_task_id:
+            task = db.query(Task).filter(Task.id == s.last_task_id).first()
+            is_processing = bool(task and task.status == "processing")
+        items.append(
+            _session_to_response(
+                s,
+                last_message_preview=preview,
+                is_processing=is_processing,
+            )
+        )
+    return MixSessionListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(offset + len(sessions)) < total,
+    )
 
 
 @router.post("/sessions", response_model=MixSessionResponse)
@@ -368,6 +435,27 @@ def update_session(
     db.commit()
     db.refresh(session)
     return _session_to_response(session)
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(
+    session_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("intern", "operator", "admin")),
+):
+    session = (
+        db.query(MixConversationSession)
+        .filter(
+            MixConversationSession.id == session_id,
+            MixConversationSession.user_id == current_user.id,
+        )
+        .first()
+    )
+    if not session:
+        raise AppError(message="会话不存在", error_code=ErrorCode.NOT_FOUND)
+    db.delete(session)
+    db.commit()
+    return {"session_id": session_id, "deleted": True}
 
 
 # ------------------------------------------------------------------

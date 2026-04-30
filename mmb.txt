@@ -1,0 +1,35 @@
+IBM Cloud
+科大讯飞
+华为云
+百度智能云
+Yandex Cloud
+NAVER Cloud
+Oracle Cloud Infrastructure
+NVIDIA
+Symbl.ai
+Sarvam AI
+Gnani.ai
+Together AI
+Picovoice
+aiOla
+Tiro
+Fireworks AI
+Fireworks AI
+Groq
+AmiVoice
+Cartesia
+Inworld AI
+STT.ai
+Voicegain
+Telnyx
+Twilio
+Agora
+Cloudflare Workers AI
+Cloudflare Workers AI
+DeepInfra
+fal.ai
+OVHcloud
+WaveSpeedAI
+Venice AI
+AI/ML API
+NanoGPT

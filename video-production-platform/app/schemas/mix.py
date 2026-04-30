@@ -188,12 +188,18 @@ class MixSessionResponse(BaseModel):
     session_id: str
     title: str
     last_task_id: Optional[str] = None
+    last_message_preview: Optional[str] = None
+    is_processing: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
 
 class MixSessionListResponse(BaseModel):
     items: list[MixSessionResponse]
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+    has_more: bool = False
 
 
 class MixSessionMessageItem(BaseModel):

@@ -5,6 +5,7 @@ Tests the auto-routing decision:
 - has_speech=False or role!="presenter" → vision-driven (montage) pipeline
 - Missing analysis data → vision-driven fallback
 - Analysis load failure → vision-driven fallback
+- Agent Router integration: called when director_prompt present, skipped when empty
 """
 
 import os
@@ -124,19 +125,34 @@ COMPLETED_SPEECH_NO_PRESENTER = {
 
 
 # ---------------------------------------------------------------------------
+# Helper to configure AgentRouter mock for fallback (returns None)
+# ---------------------------------------------------------------------------
+
+def _setup_agent_router_fallback(mock_agent_router_cls):
+    """Configure AgentRouter mock so route() returns None → fallback routing."""
+    mock_router_instance = MagicMock()
+    mock_router_instance.route.return_value = None
+    mock_router_instance.build_asset_summaries.return_value = []
+    mock_agent_router_cls.return_value = mock_router_instance
+    return mock_router_instance
+
+
+# ---------------------------------------------------------------------------
 # Tests: Routing decision
 # ---------------------------------------------------------------------------
 
 class TestAutoRoutingDecision:
     """Tests that run_auto_pipeline routes to the correct pipeline."""
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_presenter_with_speech_routes_to_text_driven(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """has_speech=True + role=presenter → text-driven pipeline."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = COMPLETED_PRESENTER_ANALYSIS
         mock_analysis_cls.return_value = mock_service
@@ -153,13 +169,15 @@ class TestAutoRoutingDecision:
         mock_montage.assert_not_called()
         assert result == ("/output/output-1.mp4", True)
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_product_closeup_routes_to_vision(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """has_speech=False + role=product_closeup → vision-driven pipeline."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = COMPLETED_PRODUCT_ANALYSIS
         mock_analysis_cls.return_value = mock_service
@@ -175,13 +193,15 @@ class TestAutoRoutingDecision:
         mock_montage.assert_called_once()
         mock_text_driven.assert_not_called()
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_speech_but_not_presenter_routes_to_vision(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """has_speech=True but role!=presenter → vision-driven pipeline."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = COMPLETED_SPEECH_NO_PRESENTER
         mock_analysis_cls.return_value = mock_service
@@ -197,13 +217,15 @@ class TestAutoRoutingDecision:
         mock_montage.assert_called_once()
         mock_text_driven.assert_not_called()
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_pending_analysis_routes_to_vision(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Analysis status=pending → vision-driven fallback."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = PENDING_ANALYSIS
         mock_analysis_cls.return_value = mock_service
@@ -219,13 +241,15 @@ class TestAutoRoutingDecision:
         mock_montage.assert_called_once()
         mock_text_driven.assert_not_called()
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_no_analysis_found_routes_to_vision(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """get_analysis returns None → vision-driven fallback."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = None
         mock_analysis_cls.return_value = mock_service
@@ -241,13 +265,15 @@ class TestAutoRoutingDecision:
         mock_montage.assert_called_once()
         mock_text_driven.assert_not_called()
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_analysis_load_exception_routes_to_vision(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Exception during analysis load → vision-driven fallback."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.side_effect = Exception("DB connection error")
         mock_analysis_cls.return_value = mock_service
@@ -280,14 +306,16 @@ class TestAutoRoutingDecision:
         mock_montage.assert_called_once()
         mock_text_driven.assert_not_called()
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch.object(AIDirectorService, "_run_hybrid_pipeline")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_multiple_assets_first_presenter_wins(
-        self, mock_analysis_cls, mock_hybrid, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_hybrid, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Multiple assets: presenter + non-presenter triggers hybrid pipeline."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.side_effect = [
             COMPLETED_PRODUCT_ANALYSIS,  # asset-002: no speech
@@ -307,13 +335,15 @@ class TestAutoRoutingDecision:
         mock_text_driven.assert_not_called()
         mock_montage.assert_not_called()
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_multiple_assets_none_presenter_routes_to_vision(
-        self, mock_analysis_cls, mock_text_driven, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Multiple assets, none is presenter → vision-driven."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.side_effect = [
             COMPLETED_PRODUCT_ANALYSIS,
@@ -412,12 +442,14 @@ class TestTextDrivenFallback:
 class TestParameterPassing:
     """Tests that run_auto_pipeline passes parameters correctly to sub-pipelines."""
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_vision_pipeline_receives_all_params(
-        self, mock_analysis_cls, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Vision-driven pipeline should receive all relevant parameters."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = COMPLETED_PRODUCT_ANALYSIS
         mock_analysis_cls.return_value = mock_service
@@ -447,12 +479,14 @@ class TestParameterPassing:
             video_count=1,
         )
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "_run_text_driven")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_text_pipeline_receives_all_params(
-        self, mock_analysis_cls, mock_text_driven, director, sample_clip_paths
+        self, mock_analysis_cls, mock_text_driven, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Text-driven pipeline should receive all relevant parameters."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = COMPLETED_PRESENTER_ANALYSIS
         mock_analysis_cls.return_value = mock_service
@@ -483,12 +517,14 @@ class TestParameterPassing:
             video_count=1,
         )
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "_run_hybrid_pipeline")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_hybrid_pipeline_receives_video_count(
-        self, mock_analysis_cls, mock_hybrid, director, sample_clip_paths
+        self, mock_analysis_cls, mock_hybrid, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Hybrid pipeline should receive contract video_count."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.side_effect = [
             COMPLETED_PRESENTER_ANALYSIS,
@@ -513,12 +549,14 @@ class TestHybridPromptBrollControl:
         assert _prompt_requests_broll("中间插入素材做过渡")
         assert not _prompt_requests_broll("剪成2-3条，关键句放首帧衔接")
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_missing_analysis_triggers_premix_analysis(
-        self, mock_analysis_cls, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Missing analysis should trigger analyze_asset before routing."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.side_effect = [None, COMPLETED_PRODUCT_ANALYSIS]
         mock_analysis_cls.return_value = mock_service
@@ -533,12 +571,14 @@ class TestHybridPromptBrollControl:
         mock_service.analyze_asset.assert_called_once_with("asset-002")
         assert mock_service.get_analysis.call_count == 2
 
+    @patch("app.services.ai_director_service.AgentRouter")
     @patch.object(AIDirectorService, "run_montage_pipeline")
     @patch("app.services.ai_director_service.AssetAnalysisService")
     def test_original_filenames_forwarded_to_vision_pipeline(
-        self, mock_analysis_cls, mock_montage, director, sample_clip_paths
+        self, mock_analysis_cls, mock_montage, mock_agent_router_cls, director, sample_clip_paths
     ):
         """Provided original filenames should be forwarded to montage pipeline."""
+        _setup_agent_router_fallback(mock_agent_router_cls)
         mock_service = MagicMock()
         mock_service.get_analysis.return_value = COMPLETED_PRODUCT_ANALYSIS
         mock_analysis_cls.return_value = mock_service
@@ -553,3 +593,89 @@ class TestHybridPromptBrollControl:
 
         call_kwargs = mock_montage.call_args.kwargs
         assert call_kwargs["clip_original_filenames"] == ["1.mov", "2.mov"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: Agent Router integration
+# ---------------------------------------------------------------------------
+
+class TestAgentRouterIntegration:
+    """Tests for Agent Router integration in run_auto_pipeline()."""
+
+    @patch("app.services.ai_director_service.AgentRouter")
+    @patch.object(AIDirectorService, "run_montage_pipeline")
+    @patch("app.services.ai_director_service.AssetAnalysisService")
+    def test_agent_router_called_when_director_prompt_present(
+        self, mock_analysis_cls, mock_montage, mock_agent_router_cls, director, sample_clip_paths
+    ):
+        """Verify AgentRouter is instantiated and route() is called when
+        director_prompt is present and analysis is available."""
+        mock_router_instance = MagicMock()
+        mock_router_instance.route.return_value = None
+        mock_router_instance.build_asset_summaries.return_value = []
+        mock_agent_router_cls.return_value = mock_router_instance
+
+        mock_service = MagicMock()
+        mock_service.get_analysis.return_value = COMPLETED_PRODUCT_ANALYSIS
+        mock_analysis_cls.return_value = mock_service
+
+        mock_montage.return_value = ("/output/output-1.mp4", True)
+
+        director.run_auto_pipeline(
+            clip_paths=sample_clip_paths,
+            asset_ids=["asset-002"],
+            max_output_duration=60,
+            director_prompt="混剪这些素材",
+        )
+
+        # AgentRouter should have been instantiated
+        mock_agent_router_cls.assert_called_once()
+        # build_asset_summaries and route should have been called
+        mock_router_instance.build_asset_summaries.assert_called_once()
+        mock_router_instance.route.assert_called_once()
+
+    @patch("app.services.ai_director_service.AgentRouter")
+    @patch.object(AIDirectorService, "run_montage_pipeline")
+    @patch("app.services.ai_director_service.AssetAnalysisService")
+    def test_agent_router_skipped_when_director_prompt_empty(
+        self, mock_analysis_cls, mock_montage, mock_agent_router_cls, director, sample_clip_paths
+    ):
+        """Verify AgentRouter is NOT called when director_prompt is empty."""
+        mock_service = MagicMock()
+        mock_service.get_analysis.return_value = COMPLETED_PRODUCT_ANALYSIS
+        mock_analysis_cls.return_value = mock_service
+
+        mock_montage.return_value = ("/output/output-1.mp4", True)
+
+        director.run_auto_pipeline(
+            clip_paths=sample_clip_paths,
+            asset_ids=["asset-002"],
+            max_output_duration=60,
+            director_prompt="",
+        )
+
+        # AgentRouter should NOT have been instantiated
+        mock_agent_router_cls.assert_not_called()
+
+    @patch("app.services.ai_director_service.AgentRouter")
+    @patch.object(AIDirectorService, "run_montage_pipeline")
+    @patch("app.services.ai_director_service.AssetAnalysisService")
+    def test_agent_router_skipped_when_director_prompt_whitespace(
+        self, mock_analysis_cls, mock_montage, mock_agent_router_cls, director, sample_clip_paths
+    ):
+        """Verify AgentRouter is NOT called when director_prompt is whitespace-only."""
+        mock_service = MagicMock()
+        mock_service.get_analysis.return_value = COMPLETED_PRODUCT_ANALYSIS
+        mock_analysis_cls.return_value = mock_service
+
+        mock_montage.return_value = ("/output/output-1.mp4", True)
+
+        director.run_auto_pipeline(
+            clip_paths=sample_clip_paths,
+            asset_ids=["asset-002"],
+            max_output_duration=60,
+            director_prompt="   \t\n  ",
+        )
+
+        # AgentRouter should NOT have been instantiated
+        mock_agent_router_cls.assert_not_called()

@@ -799,3 +799,106 @@ Error opening input files: No such file or directory
 2026-04-27 19:42:02 [INFO] [request_id=-] app.mixing_engine: burning subtitles via FFmpeg subtitles filter: storage/tasks/ba487193-1b91-4c10-9096-f0271c5dd511/subtitles-2.srt (fontsdir: /Users/xxx/XeEdio/XeEdio/video-production-platform/resource/fonts)
 2026-04-27 19:42:17 [INFO] [request_id=-] app.mixing_engine: subtitles burned successfully
 2026-04-27 19:42:28 [INFO] [request_id=-] app.mixing_engine: tail fade-out applied (0.3s) to storage/tasks/ba487193-1b91-4c10-9096-f0271c5dd511/output-2.mp4
+2026-04-28 15:11:59 [INFO] [request_id=-] app.mixing_engine: montage: 8 timeline entries → 8 valid seg_specs, clip_paths=['storage/assets/589e474a-ed82-46fa-8821-e496c159e397/original.mov', 'storage/assets/64e658c2-ecc9-4477-b70f-3d79948fede7/original.mov', 'storage/assets/6f410477-93be-4263-94f9-aae34a48c921/original.mov', 'storage/assets/fdd3cb52-4909-4853-a37c-6d90af09dc58/original.mov', 'storage/assets/58dc11b7-677f-4799-91d6-9b420f1ed688/original.mov', 'storage/assets/b9afd74d-1757-4065-89f3-f32dc96aa8af/original.mov', 'storage/assets/fa9d4e70-0d8b-486d-9200-21b48e0ec742/original.mov', 'storage/assets/4be37549-ecbf-42b2-9c19-8b64c9cfe1fc/original.mov', 'storage/assets/d9dceecb-5923-4331-a35a-94180ab64125/original.mov']
+2026-04-28 15:11:59 [INFO] [request_id=-] app.mixing_engine: montage: rendering 8 segments with 4 concurrent workers
+2026-04-28 15:11:59 [INFO] [request_id=-] app.mixing_engine: montage seg 0: ss=0.000 duration=2.300 timeout=180s src=storage/assets/d9dceecb-5923-4331-a35a-94180ab64125/original.mov
+2026-04-28 15:11:59 [INFO] [request_id=-] app.mixing_engine: montage seg 1: ss=0.000 duration=2.000 timeout=180s src=storage/assets/4be37549-ecbf-42b2-9c19-8b64c9cfe1fc/original.mov
+2026-04-28 15:11:59 [INFO] [request_id=-] app.mixing_engine: montage seg 2: ss=0.000 duration=8.100 timeout=180s src=storage/assets/64e658c2-ecc9-4477-b70f-3d79948fede7/original.mov
+2026-04-28 15:11:59 [INFO] [request_id=-] app.mixing_engine: montage seg 3: ss=0.000 duration=5.600 timeout=180s src=storage/assets/6f410477-93be-4263-94f9-aae34a48c921/original.mov
+2026-04-28 15:12:04 [INFO] [request_id=-] app.mixing_engine: montage seg 1 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0001.mp4 (2.0s)
+2026-04-28 15:12:04 [INFO] [request_id=-] app.mixing_engine: montage seg 4: ss=0.000 duration=6.800 timeout=180s src=storage/assets/fdd3cb52-4909-4853-a37c-6d90af09dc58/original.mov
+2026-04-28 15:12:05 [INFO] [request_id=-] app.mixing_engine: montage seg 0 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0000.mp4 (2.3s)
+2026-04-28 15:12:05 [INFO] [request_id=-] app.mixing_engine: montage seg 5: ss=0.000 duration=4.400 timeout=180s src=storage/assets/b9afd74d-1757-4065-89f3-f32dc96aa8af/original.mov
+2026-04-28 15:12:12 [INFO] [request_id=-] app.mixing_engine: montage seg 3 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0003.mp4 (5.6s)
+2026-04-28 15:12:12 [INFO] [request_id=-] app.mixing_engine: montage seg 6: ss=0.000 duration=4.200 timeout=180s src=storage/assets/fa9d4e70-0d8b-486d-9200-21b48e0ec742/original.mov
+2026-04-28 15:12:14 [INFO] [request_id=-] app.mixing_engine: montage seg 2 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0002.mp4 (8.1s)
+2026-04-28 15:12:14 [INFO] [request_id=-] app.mixing_engine: montage seg 7: ss=0.000 duration=4.600 timeout=180s src=storage/assets/589e474a-ed82-46fa-8821-e496c159e397/original.mov
+2026-04-28 15:12:16 [INFO] [request_id=-] app.mixing_engine: montage seg 5 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0005.mp4 (4.4s)
+2026-04-28 15:12:19 [INFO] [request_id=-] app.mixing_engine: montage seg 4 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0004.mp4 (6.8s)
+2026-04-28 15:12:21 [INFO] [request_id=-] app.mixing_engine: montage seg 6 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0006.mp4 (4.2s)
+2026-04-28 15:12:22 [INFO] [request_id=-] app.mixing_engine: montage seg 7 rendered OK: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/montage-seg-0007.mp4 (4.6s)
+2026-04-28 15:12:22 [INFO] [request_id=-] app.mixing_engine: montage timeline execution complete (synced audio): storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/output-1.mp4
+2026-04-28 15:12:22 [INFO] [request_id=-] app.mixing_engine: generating subtitles from audio: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/output-1.mp4
+2026-04-28 15:12:27 [INFO] [request_id=-] app.mixing_engine: VideoCaptioner transcription succeeded: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/subtitles-1.srt
+2026-04-28 15:12:27 [INFO] [request_id=-] app.mixing_engine: ASS subtitles written: 4 segments -> storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/subtitles-1.ass
+2026-04-28 15:12:27 [INFO] [request_id=-] app.mixing_engine: burning subtitles via FFmpeg subtitles filter: storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/subtitles-1.srt (fontsdir: /Users/xxx/XeEdio/XeEdio/video-production-platform/resource/fonts)
+2026-04-28 15:12:50 [INFO] [request_id=-] app.mixing_engine: subtitles burned successfully
+2026-04-28 15:13:10 [INFO] [request_id=-] app.mixing_engine: tail fade-out applied (0.3s) to storage/tasks/9dc1d5d8-1198-4cc9-8fca-965d0e83af1d/output-1.mp4
+2026-04-28 23:36:42 [INFO] [request_id=-] app.mixing_engine: combine_videos: FFmpeg fast path (1 clips, preserving source audio)
+2026-04-28 23:36:42 [INFO] [request_id=-] app.mixing_engine: combine_videos FFmpeg fast path complete: storage/tasks/8be11952-a0a8-49c1-bbe3-d84f89419e0c/output-1.mp4
+2026-04-29 13:06:23 [INFO] [request_id=-] app.mixing_engine: montage: 8 timeline entries → 8 valid seg_specs, clip_paths=['storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4']
+2026-04-29 13:06:23 [INFO] [request_id=-] app.mixing_engine: montage: rendering 8 segments with 4 concurrent workers
+2026-04-29 13:06:23 [INFO] [request_id=-] app.mixing_engine: montage seg 0: ss=0.000 duration=5.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:23 [INFO] [request_id=-] app.mixing_engine: montage seg 1: ss=90.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:23 [INFO] [request_id=-] app.mixing_engine: montage seg 2: ss=24.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:23 [INFO] [request_id=-] app.mixing_engine: montage seg 3: ss=180.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:29 [INFO] [request_id=-] app.mixing_engine: montage seg 0 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0000.mp4 (5.0s)
+2026-04-29 13:06:29 [INFO] [request_id=-] app.mixing_engine: montage seg 4: ss=60.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:30 [INFO] [request_id=-] app.mixing_engine: montage seg 2 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0002.mp4 (8.0s)
+2026-04-29 13:06:30 [INFO] [request_id=-] app.mixing_engine: montage seg 5: ss=240.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:30 [INFO] [request_id=-] app.mixing_engine: montage seg 1 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0001.mp4 (8.0s)
+2026-04-29 13:06:30 [INFO] [request_id=-] app.mixing_engine: montage seg 6: ss=120.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:31 [INFO] [request_id=-] app.mixing_engine: montage seg 3 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0003.mp4 (8.0s)
+2026-04-29 13:06:31 [INFO] [request_id=-] app.mixing_engine: montage seg 7: ss=330.000 duration=8.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:06:37 [INFO] [request_id=-] app.mixing_engine: montage seg 4 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0004.mp4 (8.0s)
+2026-04-29 13:06:38 [INFO] [request_id=-] app.mixing_engine: montage seg 5 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0005.mp4 (8.0s)
+2026-04-29 13:06:38 [INFO] [request_id=-] app.mixing_engine: montage seg 6 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0006.mp4 (8.0s)
+2026-04-29 13:06:38 [INFO] [request_id=-] app.mixing_engine: montage seg 7 rendered OK: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/montage-seg-0007.mp4 (8.0s)
+2026-04-29 13:06:39 [INFO] [request_id=-] app.mixing_engine: montage timeline execution complete (synced audio): storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/output-1.mp4
+2026-04-29 13:06:39 [INFO] [request_id=-] app.mixing_engine: generating subtitles from audio: storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/output-1.mp4
+2026-04-29 13:06:39 [WARNING] [request_id=-] app.mixing_engine: videocaptioner CLI not found, falling back to whisper
+2026-04-29 13:06:39 [WARNING] [request_id=-] app.mixing_engine: whisper fallback failed: No module named 'faster_whisper'
+2026-04-29 13:06:39 [WARNING] [request_id=-] app.mixing_engine: no subtitles generated
+2026-04-29 13:06:49 [INFO] [request_id=-] app.mixing_engine: tail fade-out applied (0.3s) to storage/tasks/a6090df4-9154-47ce-b9a5-e59ff8e23ec8/output-1.mp4
+2026-04-29 13:07:44 [INFO] [request_id=-] app.mixing_engine: montage: 3 timeline entries → 3 valid seg_specs, clip_paths=['storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4']
+2026-04-29 13:07:44 [INFO] [request_id=-] app.mixing_engine: montage: rendering 3 segments with 3 concurrent workers
+2026-04-29 13:07:44 [INFO] [request_id=-] app.mixing_engine: montage seg 0: ss=36.500 duration=5.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:07:44 [INFO] [request_id=-] app.mixing_engine: montage seg 1: ss=24.300 duration=5.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:07:44 [INFO] [request_id=-] app.mixing_engine: montage seg 2: ss=85.200 duration=5.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:07:47 [INFO] [request_id=-] app.mixing_engine: montage seg 0 rendered OK: storage/tasks/58177308-aa9b-49b8-9852-00c02ddbfa6e/montage-seg-0000.mp4 (5.0s)
+2026-04-29 13:07:47 [INFO] [request_id=-] app.mixing_engine: montage seg 1 rendered OK: storage/tasks/58177308-aa9b-49b8-9852-00c02ddbfa6e/montage-seg-0001.mp4 (5.0s)
+2026-04-29 13:07:47 [INFO] [request_id=-] app.mixing_engine: montage seg 2 rendered OK: storage/tasks/58177308-aa9b-49b8-9852-00c02ddbfa6e/montage-seg-0002.mp4 (5.0s)
+2026-04-29 13:07:47 [INFO] [request_id=-] app.mixing_engine: montage timeline execution complete (synced audio): storage/tasks/58177308-aa9b-49b8-9852-00c02ddbfa6e/output-1.mp4
+2026-04-29 13:07:47 [INFO] [request_id=-] app.mixing_engine: generating subtitles from audio: storage/tasks/58177308-aa9b-49b8-9852-00c02ddbfa6e/output-1.mp4
+2026-04-29 13:07:47 [WARNING] [request_id=-] app.mixing_engine: videocaptioner CLI not found, falling back to whisper
+2026-04-29 13:07:47 [WARNING] [request_id=-] app.mixing_engine: whisper fallback failed: No module named 'faster_whisper'
+2026-04-29 13:07:47 [WARNING] [request_id=-] app.mixing_engine: no subtitles generated
+2026-04-29 13:07:50 [INFO] [request_id=-] app.mixing_engine: tail fade-out applied (0.3s) to storage/tasks/58177308-aa9b-49b8-9852-00c02ddbfa6e/output-1.mp4
+2026-04-29 13:09:45 [INFO] [request_id=-] app.mixing_engine: montage: 5 timeline entries → 5 valid seg_specs, clip_paths=['storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4']
+2026-04-29 13:09:45 [INFO] [request_id=-] app.mixing_engine: montage: rendering 5 segments with 4 concurrent workers
+2026-04-29 13:09:45 [INFO] [request_id=-] app.mixing_engine: montage seg 0: ss=34.000 duration=3.500 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:09:45 [INFO] [request_id=-] app.mixing_engine: montage seg 1: ss=24.000 duration=3.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:09:45 [INFO] [request_id=-] app.mixing_engine: montage seg 2: ss=108.000 duration=3.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:09:45 [INFO] [request_id=-] app.mixing_engine: montage seg 3: ss=254.000 duration=3.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:09:47 [INFO] [request_id=-] app.mixing_engine: montage seg 2 rendered OK: storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/montage-seg-0002.mp4 (3.0s)
+2026-04-29 13:09:47 [INFO] [request_id=-] app.mixing_engine: montage seg 4: ss=242.000 duration=2.500 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:09:48 [INFO] [request_id=-] app.mixing_engine: montage seg 3 rendered OK: storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/montage-seg-0003.mp4 (3.0s)
+2026-04-29 13:09:48 [INFO] [request_id=-] app.mixing_engine: montage seg 1 rendered OK: storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/montage-seg-0001.mp4 (3.0s)
+2026-04-29 13:09:48 [INFO] [request_id=-] app.mixing_engine: montage seg 0 rendered OK: storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/montage-seg-0000.mp4 (3.5s)
+2026-04-29 13:09:48 [INFO] [request_id=-] app.mixing_engine: montage seg 4 rendered OK: storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/montage-seg-0004.mp4 (2.5s)
+2026-04-29 13:09:48 [INFO] [request_id=-] app.mixing_engine: montage timeline execution complete (synced audio): storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/output-1.mp4
+2026-04-29 13:09:48 [INFO] [request_id=-] app.mixing_engine: generating subtitles from audio: storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/output-1.mp4
+2026-04-29 13:09:48 [WARNING] [request_id=-] app.mixing_engine: videocaptioner CLI not found, falling back to whisper
+2026-04-29 13:09:48 [WARNING] [request_id=-] app.mixing_engine: whisper fallback failed: No module named 'faster_whisper'
+2026-04-29 13:09:48 [WARNING] [request_id=-] app.mixing_engine: no subtitles generated
+2026-04-29 13:09:51 [INFO] [request_id=-] app.mixing_engine: tail fade-out applied (0.3s) to storage/tasks/2e123534-3e9c-4b57-a287-e0a6c3bc82dd/output-1.mp4
+2026-04-29 13:20:16 [INFO] [request_id=-] app.mixing_engine: montage: 6 timeline entries → 6 valid seg_specs, clip_paths=['storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4']
+2026-04-29 13:20:16 [INFO] [request_id=-] app.mixing_engine: montage: rendering 6 segments with 4 concurrent workers
+2026-04-29 13:20:16 [INFO] [request_id=-] app.mixing_engine: montage seg 0: ss=0.000 duration=2.500 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:20:16 [INFO] [request_id=-] app.mixing_engine: montage seg 1: ss=90.000 duration=2.500 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:20:16 [INFO] [request_id=-] app.mixing_engine: montage seg 2: ss=180.000 duration=2.500 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:20:16 [INFO] [request_id=-] app.mixing_engine: montage seg 3: ss=240.000 duration=3.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:20:19 [INFO] [request_id=-] app.mixing_engine: montage seg 1 rendered OK: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/montage-seg-0001.mp4 (2.5s)
+2026-04-29 13:20:19 [INFO] [request_id=-] app.mixing_engine: montage seg 4: ss=60.000 duration=2.000 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:20:19 [INFO] [request_id=-] app.mixing_engine: montage seg 0 rendered OK: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/montage-seg-0000.mp4 (2.5s)
+2026-04-29 13:20:19 [INFO] [request_id=-] app.mixing_engine: montage seg 5: ss=330.000 duration=2.500 timeout=180s src=storage/assets/9fbc0a5f-ef2b-46e7-af93-7b95b1a97d99/original.mp4
+2026-04-29 13:20:19 [INFO] [request_id=-] app.mixing_engine: montage seg 2 rendered OK: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/montage-seg-0002.mp4 (2.5s)
+2026-04-29 13:20:19 [INFO] [request_id=-] app.mixing_engine: montage seg 3 rendered OK: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/montage-seg-0003.mp4 (3.0s)
+2026-04-29 13:20:20 [INFO] [request_id=-] app.mixing_engine: montage seg 4 rendered OK: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/montage-seg-0004.mp4 (2.0s)
+2026-04-29 13:20:20 [INFO] [request_id=-] app.mixing_engine: montage seg 5 rendered OK: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/montage-seg-0005.mp4 (2.5s)
+2026-04-29 13:20:20 [INFO] [request_id=-] app.mixing_engine: montage timeline execution complete (synced audio): storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/output-1.mp4
+2026-04-29 13:20:20 [INFO] [request_id=-] app.mixing_engine: generating subtitles from audio: storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/output-1.mp4
+2026-04-29 13:20:20 [WARNING] [request_id=-] app.mixing_engine: videocaptioner CLI not found, falling back to whisper
+2026-04-29 13:20:20 [WARNING] [request_id=-] app.mixing_engine: whisper fallback failed: No module named 'faster_whisper'
+2026-04-29 13:20:20 [WARNING] [request_id=-] app.mixing_engine: no subtitles generated
+2026-04-29 13:20:23 [INFO] [request_id=-] app.mixing_engine: tail fade-out applied (0.3s) to storage/tasks/5170026e-a061-4f43-93b1-461bcc11c3f8/output-1.mp4

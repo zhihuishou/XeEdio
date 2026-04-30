@@ -200,6 +200,44 @@ class AssetAnalysis(Base):
     asset = relationship("Asset", backref="analysis")
 
 
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    asset_ids = Column(Text, nullable=True)  # JSON array of related asset IDs
+    agent_state = Column(Text, nullable=True)  # JSON object with structured context memory
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+    messages = relationship(
+        "ConversationMessage",
+        back_populates="conversation",
+        cascade="all, delete-orphan",
+        order_by="ConversationMessage.created_at",
+    )
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    conversation_id = Column(
+        String,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role = Column(String, nullable=False)  # user | assistant | tool
+    content = Column(Text, nullable=False, default="")
+    tool_name = Column(String, nullable=True)
+    tool_call_id = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+
+    conversation = relationship("Conversation", back_populates="messages")
+
+
 class MixConversationSession(Base):
     __tablename__ = "mix_conversation_sessions"
 

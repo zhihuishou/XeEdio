@@ -4,8 +4,77 @@
 {% block topbar %}<span class="text-sm font-semibold text-slate-700">智能混剪</span>{% endblock %}
 
 {% block content %}
-<div x-data="mixChat()" x-init="init()" class="flex flex-col h-[calc(100vh-52px-48px)]">
+<div x-data="mixChat()" x-init="init()" class="flex h-[calc(100vh-52px-48px)]">
+    <!-- Conversation Sidebar -->
+    <aside class="w-80 bg-gradient-to-b from-slate-50 to-white border-r border-slate-200/80 flex flex-col"
+        tabindex="0"
+        @keydown.arrow-down.prevent="focusNextSession()"
+        @keydown.arrow-up.prevent="focusPrevSession()"
+        @keydown.enter.prevent="openFocusedSession()">
+        <div class="p-3 border-b border-slate-200/70 bg-white/80 backdrop-blur-sm">
+            <p class="text-xs font-semibold text-slate-500 mb-2">会话管理</p>
+            <button @click="startNewSession()"
+                class="w-full text-sm bg-slate-800 text-white py-2 rounded-xl hover:bg-slate-900 transition-colors cursor-pointer shadow-sm">
+                + 新建对话
+            </button>
+            <button @click="resetCurrentSession()"
+                class="w-full mt-2 text-xs border border-slate-200 text-slate-600 py-1.5 rounded-xl hover:bg-slate-50 transition-colors cursor-pointer">
+                重置当前会话
+            </button>
+        </div>
+        <div class="px-3 py-3 border-b border-slate-200/70 bg-white/70">
+            <p class="text-xs font-semibold text-slate-500 mb-2">对话历史</p>
+            <input x-model="sessionSearchQuery" type="text" placeholder="搜索会话..."
+                class="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-transparent">
+        </div>
+        <div class="flex-1 overflow-y-auto p-2.5 space-y-2">
+            <template x-if="loadingSessions">
+                <div class="text-xs text-slate-400 px-2 py-2">加载中...</div>
+            </template>
+            <template x-if="!loadingSessions && groupedSessions.length === 0">
+                <div class="text-xs text-slate-400 px-2 py-2">暂无历史对话</div>
+            </template>
+            <template x-for="group in groupedSessions" :key="group.label">
+                <div>
+                    <div class="px-2 py-1 text-[11px] font-medium tracking-wide text-slate-400 uppercase" x-text="group.label"></div>
+                    <div class="space-y-1.5">
+                        <template x-for="s in group.items" :key="s.session_id">
+                            <div x-data="{hover:false}" @mouseenter="hover=true" @mouseleave="hover=false"
+                                :class="(activeSessionId === s.session_id)
+                                    ? 'bg-slate-100/90 border-slate-300 shadow-sm'
+                                    : ((visibleSessionsFlat[focusedSessionIndex]?.session_id === s.session_id)
+                                        ? 'bg-slate-50 border-slate-300'
+                                        : 'bg-white border-slate-200 hover:bg-slate-50')"
+                                class="w-full text-left border rounded-xl px-2.5 py-2.5 transition-all">
+                                <button @click="selectSession(s.session_id)" class="w-full text-left cursor-pointer">
+                                    <div class="flex items-center gap-1">
+                                        <span x-show="s.is_processing" class="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        <p class="text-sm font-medium text-slate-800 truncate flex-1" x-text="s.title || '未命名会话'"></p>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400 truncate mt-0.5" x-text="s.last_message_preview || '暂无消息'"></p>
+                                    <p class="text-[11px] text-slate-500 mt-1" x-text="formatSessionTime(s.updated_at || s.created_at)"></p>
+                                </button>
+                                <div x-show="hover || activeSessionId === s.session_id" x-transition class="mt-1 flex items-center justify-end gap-2">
+                                    <button @click="renameSession(s)" class="text-[11px] text-slate-500 hover:text-slate-800 cursor-pointer">重命名</button>
+                                    <button @click="deleteSession(s.session_id)" class="text-[11px] text-slate-500 hover:text-red-600 cursor-pointer">删除</button>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </template>
+            <template x-if="!loadingSessions && hasMoreSessions">
+                <div class="px-2 py-1">
+                    <button @click="loadMoreSessions()"
+                        class="w-full text-xs border border-slate-200 text-slate-600 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer">
+                        加载更多
+                    </button>
+                </div>
+            </template>
+        </div>
+    </aside>
 
+    <div class="flex-1 flex flex-col h-full">
     <!-- Messages Area -->
     <div class="flex-1 overflow-y-auto px-4 py-4 space-y-4" x-ref="messagesContainer">
         <template x-for="(msg, idx) in messages" :key="idx">
@@ -17,6 +86,14 @@
                     <!-- Text message -->
                     <template x-if="msg.type === 'text'">
                         <p class="text-sm whitespace-pre-wrap" x-text="msg.content"></p>
+                    </template>
+
+                    <!-- Ask user message -->
+                    <template x-if="msg.type === 'ask_user'">
+                        <div class="space-y-1">
+                            <p class="text-sm font-medium text-amber-700">❓ 需要补充信息</p>
+                            <p class="text-sm whitespace-pre-wrap text-slate-700" x-text="msg.content"></p>
+                        </div>
                     </template>
 
                     <!-- Asset upload card -->
@@ -186,14 +263,14 @@
     </div>
 
     <!-- Input Area -->
-    <div class="px-4 py-3 bg-white border-t border-gray-200">
-        <div class="flex items-end gap-2">
+    <div class="px-4 py-3 bg-white border-t border-slate-200/80">
+        <div class="flex items-center gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl px-2.5 py-2 shadow-sm">
             <!-- Upload button -->
             <input type="file" x-ref="fileInput" @change="handleFileUpload($event)" multiple
                 accept="video/mp4,video/quicktime,video/x-msvideo,image/jpeg,image/png,image/webp"
                 class="hidden">
             <button @click="$refs.fileInput.click()" :disabled="uploading"
-                class="flex-shrink-0 p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors disabled:opacity-50"
+                class="flex-shrink-0 p-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl cursor-pointer transition-colors disabled:opacity-50"
                 title="添加素材">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
@@ -202,7 +279,7 @@
 
             <!-- Asset library button -->
             <button @click="showAssetPicker = true; clearSearch(); loadLibraryAssets()"
-                class="flex-shrink-0 p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer transition-colors"
+                class="flex-shrink-0 p-2 text-slate-500 hover:text-slate-800 hover:bg-white rounded-xl cursor-pointer transition-colors"
                 title="从素材库选择">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -211,8 +288,8 @@
 
             <!-- Params toggle -->
             <button @click="showParams = !showParams"
-                :class="showParams ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'"
-                class="flex-shrink-0 p-2 rounded-lg cursor-pointer transition-colors"
+                :class="showParams ? 'text-slate-800 bg-white border border-slate-300' : 'text-slate-500 hover:text-slate-800 hover:bg-white'"
+                class="flex-shrink-0 p-2 rounded-xl cursor-pointer transition-colors"
                 title="参数设置">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
@@ -224,14 +301,14 @@
                 <textarea x-model="inputText" @keydown.enter="if(!$event.shiftKey){$event.preventDefault(); sendMessage()}"
                     placeholder="输入剪辑指令，如：剪一条60秒的产品种草视频..."
                     rows="1"
-                    class="w-full resize-none border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    class="w-full resize-none border border-slate-200 bg-white rounded-xl px-4 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 focus:border-transparent"
                     style="max-height: 120px; overflow-y: auto;"
                     @input="$el.style.height='auto'; $el.style.height=$el.scrollHeight+'px'"></textarea>
             </div>
 
             <!-- Send button -->
             <button @click="sendMessage()" :disabled="!canSend"
-                class="flex-shrink-0 p-2.5 bg-slate-700 text-white rounded-xl hover:bg-slate-800 cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                class="flex-shrink-0 w-10 h-10 inline-flex items-center justify-center bg-slate-800 text-white rounded-xl hover:bg-slate-900 cursor-pointer transition-colors disabled:bg-slate-300 disabled:text-slate-100 disabled:cursor-not-allowed">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
                 </svg>
@@ -327,6 +404,7 @@
             </div>
         </div>
     </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -341,6 +419,8 @@ function mixChat() {
         processing: false,
         currentTaskId: null,
         pollTimer: null,
+        chatConversationId: null,
+        eventSource: null,
         showParams: false,
         showAssetPicker: false,
         libraryAssets: [],
@@ -353,6 +433,15 @@ function mixChat() {
         analysisStatusCache: {},      // { assetId: { status, role } }
         analysisPollingTimers: {},    // { assetId: intervalId }
         conversationSessionId: null,
+        activeSessionId: null,
+        sessions: [],
+        loadingSessions: false,
+        sessionSearchQuery: '',
+        sessionsPage: 1,
+        sessionsPageSize: 20,
+        hasMoreSessions: false,
+        focusedSessionIndex: 0,
+        pendingAssetUploadMessage: null,
         storageKey: 'mix_chat_state_v1',
 
         params: {
@@ -368,11 +457,50 @@ function mixChat() {
         previewAudio: null,
 
         get canSend() {
-            return this.inputText.trim() && this.selectedAssets.length > 0 && !this.processing;
+            const hasContext = this.selectedAssets.length > 0 || !!this.chatConversationId;
+            return this.inputText.trim() && hasContext && !this.processing;
+        },
+
+        get groupedSessions() {
+            const q = (this.sessionSearchQuery || '').trim().toLowerCase();
+            const filtered = this.sessions.filter(s => {
+                if (!q) return true;
+                const title = (s.title || '').toLowerCase();
+                return title.includes(q);
+            });
+            const groups = { '今天': [], '昨天': [], '更早': [] };
+            const now = new Date();
+            const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const startYesterday = new Date(startToday);
+            startYesterday.setDate(startYesterday.getDate() - 1);
+            for (const s of filtered) {
+                const ts = s.updated_at || s.created_at;
+                const d = ts ? new Date(ts) : null;
+                if (!d || Number.isNaN(d.getTime())) {
+                    groups['更早'].push(s);
+                    continue;
+                }
+                if (d >= startToday) groups['今天'].push(s);
+                else if (d >= startYesterday) groups['昨天'].push(s);
+                else groups['更早'].push(s);
+            }
+            return Object.entries(groups)
+                .filter(([, items]) => items.length > 0)
+                .map(([label, items]) => ({ label, items }));
+        },
+
+        get visibleSessionsFlat() {
+            const out = [];
+            for (const g of this.groupedSessions) {
+                for (const s of g.items) out.push(s);
+            }
+            return out;
         },
 
         async init() {
+            await this.loadSessions(true);
             await this.restoreConversationState();
+            await this.reconcileTaskStateOnInit();
             if (this.messages.length === 0) {
                 this.addMessage('system', 'text',
                     '👋 欢迎使用智能混剪！\n\n' +
@@ -383,6 +511,36 @@ function mixChat() {
             }
             if (this.currentTaskId && this.processing) {
                 this.startPolling(this.currentTaskId);
+            }
+        },
+
+        async reconcileTaskStateOnInit() {
+            // If no task is tracked, clear stale progress UI.
+            if (!this.currentTaskId) {
+                this.processing = false;
+                this.clearProgressMessages();
+                this.saveLocalState();
+                return;
+            }
+            try {
+                const status = await apiCall('GET', `/api/mix/${this.currentTaskId}/status`);
+                if (!status) return;
+                if (status.status === 'processing') {
+                    this.processing = true;
+                    const progressText = status.progress || '处理中...';
+                    this.updateLastSystemMessage('progress', '⏳ ' + progressText);
+                } else {
+                    // Task already ended: prevent stale "processing" after refresh.
+                    this.processing = false;
+                    this.clearProgressMessages();
+                }
+                this.saveLocalState();
+            } catch (e) {
+                // If status lookup fails (e.g. stale task id), don't block the UI.
+                this.processing = false;
+                this.clearProgressMessages();
+                this.currentTaskId = null;
+                this.saveLocalState();
             }
         },
 
@@ -411,6 +569,8 @@ function mixChat() {
                     currentTaskId: this.currentTaskId,
                     processing: this.processing,
                     conversationSessionId: this.conversationSessionId,
+                    activeSessionId: this.activeSessionId,
+                    chatConversationId: this.chatConversationId,
                     params: this.params,
                     inputText: this.inputText,
                     analysisStatusCache: this.analysisStatusCache,
@@ -430,6 +590,8 @@ function mixChat() {
                 this.currentTaskId = parsed.currentTaskId || null;
                 this.processing = !!parsed.processing;
                 this.conversationSessionId = parsed.conversationSessionId || null;
+                this.activeSessionId = parsed.activeSessionId || this.conversationSessionId || null;
+                this.chatConversationId = parsed.chatConversationId || null;
                 this.params = parsed.params ? { ...this.params, ...parsed.params } : this.params;
                 this.inputText = parsed.inputText || '';
                 this.analysisStatusCache = parsed.analysisStatusCache || {};
@@ -441,18 +603,317 @@ function mixChat() {
         },
 
         async ensureSession() {
-            if (this.conversationSessionId) return this.conversationSessionId;
-            const list = await apiCall('GET', '/api/mix/sessions');
+            if (this.chatConversationId) return this.chatConversationId;
+            const list = await apiCall('GET', `/api/chat/conversations?page=1&page_size=${this.sessionsPageSize}`);
             const latest = list?.items?.[0];
-            if (latest?.session_id) {
-                this.conversationSessionId = latest.session_id;
+            if (latest?.id) {
+                this.chatConversationId = latest.id;
+                this.activeSessionId = latest.id;
                 this.saveLocalState();
-                return this.conversationSessionId;
+                return this.chatConversationId;
             }
-            const created = await apiCall('POST', '/api/mix/sessions', { title: '智能混剪会话' });
-            this.conversationSessionId = created?.session_id || null;
-            this.saveLocalState();
-            return this.conversationSessionId;
+            return null;
+        },
+
+        async loadSessions(reset = false) {
+            if (this.loadingSessions) return;
+            if (reset) {
+                this.sessionsPage = 1;
+                this.sessions = [];
+                this.hasMoreSessions = false;
+            }
+            this.loadingSessions = true;
+            try {
+                const data = await apiCall('GET', `/api/chat/conversations?page=${this.sessionsPage}&page_size=${this.sessionsPageSize}`);
+                const incomingRaw = Array.isArray(data?.items) ? data.items : [];
+                const incoming = incomingRaw.map((item) => ({
+                    session_id: item.id,
+                    title: item.title || '未命名会话',
+                    last_message_preview: item.last_message_preview || '',
+                    is_processing: !!item.is_processing,
+                    created_at: item.created_at,
+                    updated_at: item.updated_at,
+                }));
+                if (reset) this.sessions = incoming;
+                else this.sessions = [...this.sessions, ...incoming];
+                this.hasMoreSessions = !!data?.has_more;
+                const flat = this.visibleSessionsFlat;
+                if (flat.length > 0) {
+                    const idx = flat.findIndex(s => s.session_id === this.activeSessionId);
+                    this.focusedSessionIndex = idx >= 0 ? idx : 0;
+                } else {
+                    this.focusedSessionIndex = 0;
+                }
+            } catch (e) {
+                console.error('loadSessions failed', e);
+                if (reset) this.sessions = [];
+                this.hasMoreSessions = false;
+            } finally {
+                this.loadingSessions = false;
+            }
+        },
+
+        async loadMoreSessions() {
+            if (!this.hasMoreSessions || this.loadingSessions) return;
+            this.sessionsPage += 1;
+            await this.loadSessions(false);
+        },
+
+        focusNextSession() {
+            const flat = this.visibleSessionsFlat;
+            if (!flat.length) return;
+            this.focusedSessionIndex = Math.min(this.focusedSessionIndex + 1, flat.length - 1);
+        },
+
+        focusPrevSession() {
+            const flat = this.visibleSessionsFlat;
+            if (!flat.length) return;
+            this.focusedSessionIndex = Math.max(this.focusedSessionIndex - 1, 0);
+        },
+
+        openFocusedSession() {
+            const flat = this.visibleSessionsFlat;
+            if (!flat.length) return;
+            const focused = flat[this.focusedSessionIndex];
+            if (focused?.session_id) this.selectSession(focused.session_id);
+        },
+
+        sessionMessageToUi(m) {
+            if (m.role) {
+                if (m.role === 'tool') {
+                    return this.mapToolMessageToUi(m);
+                }
+                const sender = m.role === 'user' ? 'user' : 'system';
+                const content = m.content || '';
+                if (m.role === 'assistant' && this.looksLikeAskUser(content)) {
+                    return { sender, type: 'ask_user', content };
+                }
+                return { sender, type: 'text', content };
+            }
+            return {
+                sender: m.sender,
+                type: m.type,
+                content: m.content || '',
+                ...(m.extra || {}),
+            };
+        },
+
+        looksLikeAskUser(content) {
+            const text = (content || '').trim();
+            if (!text) return false;
+            return text.endsWith('?') || text.endsWith('？') || text.includes('请提供') || text.includes('还需要');
+        },
+
+        mapToolMessageToUi(message) {
+            const toolName = message.tool_name || '';
+            let parsed = {};
+            try {
+                parsed = JSON.parse(message.content || '{}');
+            } catch (_e) {
+                parsed = {};
+            }
+            return this.buildToolResultUiMessage(toolName, parsed);
+        },
+
+        buildToolResultUiMessage(toolName, result) {
+            const data = result?.result || {};
+            if (toolName === 'get_task_status') {
+                const status = data.status || '';
+                const taskId = data.task_id || this.currentTaskId;
+                if (status === 'processing') {
+                    return {
+                        sender: 'system',
+                        type: 'progress',
+                        content: `⏳ ${data.progress || '任务处理中...'}`,
+                    };
+                }
+                if (status === 'video_done' && Array.isArray(data.video_paths) && data.video_paths.length > 0) {
+                    return {
+                        sender: 'system',
+                        type: 'video_result',
+                        content: '',
+                        video_paths: data.video_paths,
+                        task_id: taskId,
+                    };
+                }
+                if (status === 'failed') {
+                    return {
+                        sender: 'system',
+                        type: 'error',
+                        content: data.error_message || '任务失败',
+                    };
+                }
+                if (status === 'cancelled') {
+                    return {
+                        sender: 'system',
+                        type: 'text',
+                        content: '⛔ 任务已取消',
+                    };
+                }
+                return {
+                    sender: 'system',
+                    type: 'text',
+                    content: `ℹ️ 任务状态：${status || 'unknown'}`,
+                };
+            }
+
+            if (toolName === 'search_assets') {
+                const items = Array.isArray(data.items) ? data.items : [];
+                const top = items.slice(0, 3).map(i => i.original_filename).filter(Boolean);
+                const summary = top.length ? `（示例：${top.join('，')}）` : '';
+                return {
+                    sender: 'system',
+                    type: 'text',
+                    content: `🔎 找到 ${items.length} 个相关素材${summary}`,
+                };
+            }
+
+            if (toolName === 'analyze_assets') {
+                const count = data.triggered ?? 0;
+                return {
+                    sender: 'system',
+                    type: 'text',
+                    content: `🧠 已触发 ${count} 个素材分析任务`,
+                };
+            }
+
+            if (toolName === 'create_mix') {
+                const taskId = data.task_id || '';
+                if (taskId) {
+                    this.currentTaskId = taskId;
+                }
+                return {
+                    sender: 'system',
+                    type: 'progress',
+                    content: `⏳ 已创建任务 ${taskId || ''}，正在处理...`,
+                };
+            }
+
+            if (result?.ok === false) {
+                return {
+                    sender: 'system',
+                    type: 'error',
+                    content: result.error || `${toolName || '工具'} 执行失败`,
+                };
+            }
+
+            return {
+                sender: 'system',
+                type: 'text',
+                content: `✅ ${toolName || '工具'} 执行完成`,
+            };
+        },
+
+        restoreSelectedAssetsFromMessages(messages) {
+            for (let i = messages.length - 1; i >= 0; i--) {
+                const msg = messages[i];
+                if (msg.type === 'asset_upload' && Array.isArray(msg.assets) && msg.assets.length > 0) {
+                    this.selectedAssets = msg.assets;
+                    return;
+                }
+            }
+            this.selectedAssets = [];
+        },
+
+        formatSessionTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            if (Number.isNaN(d.getTime())) return '';
+            return d.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+            });
+        },
+
+        async startNewSession() {
+            try {
+                this.closeChatStream();
+                const created = await apiCall('POST', '/api/chat/conversations', { title: '新对话' });
+                if (!created?.id) return;
+                this.chatConversationId = created.id;
+                this.activeSessionId = created.id;
+                this.messages = [];
+                this.selectedAssets = [];
+                this.currentTaskId = null;
+                this.processing = false;
+                this.clearProgressMessages();
+                await this.loadSessions(true);
+                this.saveLocalState();
+                this.addMessage('system', 'text', '🆕 已创建新对话');
+            } catch (e) {
+                this.addMessage('system', 'error', '创建新会话失败');
+            }
+        },
+
+        async resetCurrentSession() {
+            try {
+                if (this.activeSessionId) {
+                    await apiCall('DELETE', `/api/chat/conversations/${this.activeSessionId}`);
+                }
+                await this.startNewSession();
+            } catch (e) {
+                this.addMessage('system', 'error', '重置会话失败');
+            }
+        },
+
+        async renameSession(session) {
+            const current = session?.title || '未命名会话';
+            const next = window.prompt('请输入新的会话名称', current);
+            if (next == null) return;
+            const title = next.trim();
+            if (!title) return;
+            try {
+                await apiCall('PUT', `/api/chat/conversations/${session.session_id}`, { title });
+                await this.loadSessions(true);
+            } catch (e) {
+                this.addMessage('system', 'error', '重命名失败');
+            }
+        },
+
+        async deleteSession(sessionId) {
+            if (!sessionId) return;
+            const ok = window.confirm('确定删除该会话吗？删除后不可恢复。');
+            if (!ok) return;
+            try {
+                await apiCall('DELETE', `/api/chat/conversations/${sessionId}`);
+                const wasActive = this.activeSessionId === sessionId;
+                await this.loadSessions(true);
+                if (wasActive) {
+                    const next = this.sessions[0];
+                    if (next?.session_id) {
+                        await this.selectSession(next.session_id);
+                    } else {
+                        await this.startNewSession();
+                    }
+                }
+            } catch (e) {
+                this.addMessage('system', 'error', '删除会话失败');
+            }
+        },
+
+        async selectSession(sessionId) {
+            if (!sessionId || sessionId === this.activeSessionId) return;
+            try {
+                this.closeChatStream();
+                const detail = await apiCall('GET', `/api/chat/conversations/${sessionId}`);
+                const remoteMessages = Array.isArray(detail?.messages) ? detail.messages : [];
+                this.messages = remoteMessages.map(m => this.sessionMessageToUi(m));
+                this.restoreSelectedAssetsFromMessages(this.messages);
+                this.chatConversationId = sessionId;
+                this.activeSessionId = sessionId;
+                const flat = this.visibleSessionsFlat;
+                const idx = flat.findIndex(s => s.session_id === sessionId);
+                this.focusedSessionIndex = idx >= 0 ? idx : this.focusedSessionIndex;
+                this.currentTaskId = detail?.agent_state?.last_task_status?.task_id || null;
+                this.processing = false;
+                this.saveLocalState();
+                await this.reconcileTaskStateOnInit();
+            } catch (e) {
+                console.error('selectSession failed', e);
+                this.addMessage('system', 'error', '加载会话失败');
+            }
         },
 
         async restoreConversationState() {
@@ -460,17 +921,15 @@ function mixChat() {
             try {
                 const sid = await this.ensureSession();
                 if (!sid) return;
-                const detail = await apiCall('GET', `/api/mix/sessions/${sid}`);
+                const detail = await apiCall('GET', `/api/chat/conversations/${sid}`);
                 const remoteMessages = Array.isArray(detail?.messages) ? detail.messages : [];
                 if ((!hasLocal || this.messages.length === 0) && remoteMessages.length > 0) {
-                    this.messages = remoteMessages.map(m => ({
-                        sender: m.sender,
-                        type: m.type,
-                        content: m.content || '',
-                        ...(m.extra || {}),
-                    }));
-                    this.currentTaskId = detail.last_task_id || this.currentTaskId;
+                    this.messages = remoteMessages.map(m => this.sessionMessageToUi(m));
+                    this.restoreSelectedAssetsFromMessages(this.messages);
+                    this.currentTaskId = detail?.agent_state?.last_task_status?.task_id || this.currentTaskId;
                 }
+                this.activeSessionId = sid;
+                await this.loadSessions(true);
                 this.saveLocalState();
             } catch (e) {
                 console.error('restoreConversationState failed', e);
@@ -478,33 +937,38 @@ function mixChat() {
         },
 
         async syncMessageToServer(message) {
-            try {
-                const sid = await this.ensureSession();
-                if (!sid) return;
-                await apiCall('POST', `/api/mix/sessions/${sid}/messages`, {
-                    sender: message.sender,
-                    type: message.type,
-                    content: message.content || '',
-                    extra: {
-                        assets: message.assets || undefined,
-                        video_paths: message.video_paths || undefined,
-                        task_id: message.task_id || undefined,
-                    },
-                });
-            } catch (e) {
-                console.error('syncMessageToServer failed', e);
-            }
+            // Conversational agent persists messages server-side.
+            return;
+        },
+
+        hasCommittedUserText() {
+            return this.messages.some(
+                (m) => m.sender === 'user' && m.type === 'text' && (m.content || '').trim().length > 0
+            );
+        },
+
+        async _syncSingleMessageToServer(sessionId, message) {
+            return;
         },
 
         async syncSessionMeta() {
+            return;
+        },
+
+        async maybeUpdateSessionTitleFromPrompt(promptText) {
             try {
                 const sid = await this.ensureSession();
-                if (!sid) return;
-                await apiCall('PUT', `/api/mix/sessions/${sid}`, {
-                    last_task_id: this.currentTaskId,
-                });
+                if (!sid || !promptText) return;
+                const active = this.sessions.find(s => s.session_id === sid);
+                const oldTitle = (active?.title || '').trim();
+                const isDefault = !oldTitle || oldTitle === '未命名会话' || oldTitle === '新对话' || oldTitle === '智能混剪会话';
+                if (!isDefault) return;
+                const title = promptText.trim().slice(0, 24);
+                if (!title) return;
+                await apiCall('PUT', `/api/chat/conversations/${sid}`, { title });
+                await this.loadSessions(true);
             } catch (e) {
-                console.error('syncSessionMeta failed', e);
+                console.error('maybeUpdateSessionTitleFromPrompt failed', e);
             }
         },
 
@@ -791,7 +1255,100 @@ function mixChat() {
             return lines.length > 0 ? '已识别参数:\n' + lines.join('\n') : '使用默认参数';
         },
 
-        // --- Send Message & Create Task ---
+        closeChatStream() {
+            if (this.eventSource) {
+                this.eventSource.close();
+                this.eventSource = null;
+            }
+        },
+
+        connectChatStream(conversationId) {
+            this.closeChatStream();
+            const token = getToken();
+            const streamUrl = token
+                ? `/api/chat/${conversationId}/stream?token=${encodeURIComponent(token)}`
+                : `/api/chat/${conversationId}/stream`;
+            this.eventSource = new EventSource(streamUrl);
+
+            this.eventSource.addEventListener('thinking', (evt) => {
+                const data = JSON.parse(evt.data || '{}');
+                const status = data.status || '处理中';
+                this.updateLastSystemMessage('progress', `🤔 ${status}...`);
+            });
+
+            this.eventSource.addEventListener('tool_call', (evt) => {
+                const data = JSON.parse(evt.data || '{}');
+                const name = data.tool_name || 'unknown_tool';
+                this.addMessage('system', 'text', `🛠️ 调用工具：${name}`);
+            });
+
+            this.eventSource.addEventListener('tool_result', (evt) => {
+                const data = JSON.parse(evt.data || '{}');
+                const toolName = data.tool_name || 'tool';
+                const result = data.result || {};
+                const uiMsg = this.buildToolResultUiMessage(toolName, result);
+                if (uiMsg.type === 'progress') {
+                    this.updateLastSystemMessage('progress', uiMsg.content || '');
+                    return;
+                }
+                if (uiMsg.type === 'video_result') {
+                    this.clearProgressMessages();
+                    this.updateLastSystemMessage('video_result', '', {
+                        video_paths: uiMsg.video_paths || [],
+                        task_id: uiMsg.task_id || this.currentTaskId,
+                    });
+                    this.processing = false;
+                    this.saveLocalState();
+                    return;
+                }
+                if (uiMsg.type === 'error') {
+                    this.clearProgressMessages();
+                    this.updateLastSystemMessage('error', uiMsg.content || '工具执行失败');
+                    return;
+                }
+                this.addMessage('system', uiMsg.type || 'text', uiMsg.content || '');
+            });
+
+            this.eventSource.addEventListener('ask_user', (evt) => {
+                const data = JSON.parse(evt.data || '{}');
+                this.clearProgressMessages();
+                this.addMessage('system', 'ask_user', data.content || '请补充信息');
+                this.processing = false;
+                this.saveLocalState();
+            });
+
+            this.eventSource.addEventListener('message', (evt) => {
+                const data = JSON.parse(evt.data || '{}');
+                this.clearProgressMessages();
+                this.addMessage('system', 'text', data.content || '');
+            });
+
+            this.eventSource.addEventListener('error', (evt) => {
+                if (!evt?.data) {
+                    // Browser transport-level EventSource error/close callback.
+                    return;
+                }
+                let message = '对话处理失败';
+                try {
+                    const data = JSON.parse(evt.data || '{}');
+                    message = data.message || message;
+                } catch (_e) {}
+                this.clearProgressMessages();
+                this.addMessage('system', 'error', message);
+                this.processing = false;
+                this.saveLocalState();
+                this.closeChatStream();
+            });
+
+            this.eventSource.addEventListener('complete', (_evt) => {
+                this.processing = false;
+                this.clearProgressMessages();
+                this.saveLocalState();
+                this.closeChatStream();
+            });
+        },
+
+        // --- Send Message via Conversational Agent ---
         async sendMessage() {
             if (!this.canSend) return;
             const text = this.inputText.trim();
@@ -799,54 +1356,24 @@ function mixChat() {
 
             this.addMessage('user', 'text', text);
             this.processing = true;
-
-            // Call backend to parse intent from natural language
-            this.addMessage('system', 'progress', '正在解析指令...');
-            const parsedParams = await this.parseIntent(text);
-
-            if (parsedParams) {
-                // Display extracted parameters as confirmation
-                const paramSummary = this.showParsedParams(parsedParams);
-                this.updateLastSystemMessage('text', paramSummary);
-            }
-
-            // Build request — send raw director_prompt and UI panel defaults;
-            // the backend handles all parameter extraction and merging via IntentParsingService
-            const body = {
-                topic: text,
-                asset_ids: this.selectedAssets.map(a => a.id),
-                director_prompt: text,
-                script_text: this.params.script_text.trim() || '',
-                aspect_ratio: this.params.aspect_ratio,
-                max_output_duration: parseInt(this.params.max_output_duration),
-                video_count: parseInt(this.params.video_count),
-                transition: this.params.transition,
-                tts_voice: this.params.tts_voice,
-                bgm_enabled: this.params.bgm_enabled,
-                // Use auto mode — backend routes to text-driven or vision-driven pipeline
-                mixing_mode: 'auto',
-                a_roll_asset_ids: [],
-                b_roll_asset_ids: [],
-                concat_mode: 'random',
-                clip_duration: 5,
-                bgm_asset_id: '',
-                bgm_volume: 0.2,
-                tts_text: this.params.script_text.trim() || '',
-            };
-
-            this.addMessage('system', 'progress', '正在创建混剪任务...');
+            this.saveLocalState();
+            this.maybeUpdateSessionTitleFromPrompt(text);
+            this.updateLastSystemMessage('progress', '⏳ Agent 正在处理中...');
 
             try {
-                const result = await apiCall('POST', '/api/mix/create', body);
-                if (!result) throw new Error('创建失败');
-                this.currentTaskId = result.task_id;
+                const result = await apiCall('POST', '/api/chat/send', {
+                    conversation_id: this.chatConversationId,
+                    message: text,
+                    asset_ids: this.selectedAssets.map(a => a.id),
+                });
+                if (!result?.conversation_id) throw new Error('发送失败');
+                this.chatConversationId = result.conversation_id;
                 this.saveLocalState();
-                this.syncSessionMeta();
-                this.updateLastSystemMessage('progress', '⏳ AI 导演正在分析素材...');
-                this.startPolling(result.task_id);
+                this.connectChatStream(this.chatConversationId);
             } catch (e) {
                 this.processing = false;
-                const msg = e.data?.error?.message || '创建任务失败';
+                this.saveLocalState();
+                const msg = e.data?.error?.message || '消息发送失败';
                 this.updateLastSystemMessage('error', msg);
             }
         },
@@ -876,6 +1403,7 @@ function mixChat() {
                         video_paths: paths,
                         task_id: taskId,
                     });
+                    this.saveLocalState();
                 } else if (status.status === 'failed') {
                     clearInterval(this.pollTimer);
                     this.pollTimer = null;
@@ -883,12 +1411,14 @@ function mixChat() {
                     this.clearProgressMessages();
                     this.addMessage('system', 'text', '❌ 任务失败');
                     this.updateLastSystemMessage('error', status.error_message || '生成失败');
+                    this.saveLocalState();
                 } else if (status.status === 'cancelled') {
                     clearInterval(this.pollTimer);
                     this.pollTimer = null;
                     this.processing = false;
                     this.clearProgressMessages();
                     this.updateLastSystemMessage('text', '⛔ 任务已取消');
+                    this.saveLocalState();
                 }
             } catch (e) {
                 console.error('Poll error:', e);
@@ -909,6 +1439,7 @@ function mixChat() {
                 this.startPolling(result.task_id);
             } catch (e) {
                 this.processing = false;
+                this.saveLocalState();
                 const msg = e.data?.error?.message || '重新混剪失败';
                 this.updateLastSystemMessage('error', msg);
             }
@@ -927,6 +1458,7 @@ function mixChat() {
                 this.startPolling(result.task_id);
             } catch (e) {
                 this.processing = false;
+                this.saveLocalState();
                 const msg = e.data?.error?.message || '仅重跑时间线失败';
                 this.updateLastSystemMessage('error', msg);
             }
@@ -945,6 +1477,7 @@ function mixChat() {
                 this.startPolling(result.task_id);
             } catch (e) {
                 this.processing = false;
+                this.saveLocalState();
                 const msg = e.data?.error?.message || '重试失败';
                 this.updateLastSystemMessage('error', msg);
             }
@@ -952,13 +1485,20 @@ function mixChat() {
 
         // --- Cancel Task ---
         async cancelTask() {
-            if (!this.currentTaskId) return;
+            if (!this.currentTaskId) {
+                this.processing = false;
+                this.clearProgressMessages();
+                this.addMessage('system', 'text', 'ℹ️ 当前没有可取消的进行中任务');
+                this.saveLocalState();
+                return;
+            }
             try {
                 const result = await apiCall('POST', `/api/mix/${this.currentTaskId}/cancel`);
                 clearInterval(this.pollTimer);
                 this.pollTimer = null;
                 this.processing = false;
                 this.updateLastSystemMessage('text', '⛔ 任务已取消');
+                this.saveLocalState();
             } catch (e) {
                 const msg = e.data?.error?.message || '取消失败';
                 this.updateLastSystemMessage('error', msg);

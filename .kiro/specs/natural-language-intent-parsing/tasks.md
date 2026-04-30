@@ -126,7 +126,7 @@ Add an LLM-powered `IntentParsingService` to extract structured mixing parameter
 - [x] 6. Checkpoint — Verify backend integration
   - Ensure all tests pass, ask the user if questions arise.
 
-- [~] 7. Write unit tests for IntentParsingService
+- [ ] 7. Write unit tests for IntentParsingService
   - [ ] 7.1 Write unit tests for `ParsedIntent` model in `tests/test_intent_parsing.py`
     - Test `defaults()` returns exact default values from Requirement 2.2
     - Test `to_dict()` returns all fields including None values
@@ -191,7 +191,7 @@ Add an LLM-powered `IntentParsingService` to extract structured mixing parameter
     - Verify `json.dumps(intent.to_dict(), ensure_ascii=False)` → `json.loads()` → `ParsedIntent.from_dict()` produces equivalent object
     - **Validates: Requirements 9.1, 9.3**
 
-- [~] 9. Checkpoint — Verify all backend tests pass
+- [ ] 9. Checkpoint — Verify all backend tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [x] 10. Frontend changes — Remove regex and integrate parse-intent
@@ -211,7 +211,7 @@ Add an LLM-powered `IntentParsingService` to extract structured mixing parameter
     - Let the backend handle all parameter extraction and merging
     - _Requirements: 3.3, 6.3_
 
-- [~] 11. Final checkpoint — Ensure all tests pass
+- [ ] 11. Final checkpoint — Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

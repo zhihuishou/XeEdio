@@ -1,0 +1,15 @@
+login_status 200
+openapi_status 200
+sessions_routes_present True True
+upload_status 201
+asset_id b7827532-bfaa-4e55-824b-3aa6097fe2d3
+create_session_status 200
+session_id 627daaf3-6714-479d-8f65-3cb2250f2590
+message1_status 200
+message2_status 200
+detail_status 200
+last2 [{"sequence": 1, "type": "asset_upload", "content": "", "asset_count": 1}, {"sequence": 2, "type": "text", "content": "剪两条60秒视频", "asset_count": 0}]
+ORDER_OK True
+list_status 200
+list_preview {"title": "API序列验证", "last_message_preview": "剪两条60秒视频"}
+RESULT PASS
