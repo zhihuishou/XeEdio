@@ -1286,6 +1286,15 @@ function mixChat() {
                 const data = JSON.parse(evt.data || '{}');
                 const toolName = data.tool_name || 'tool';
                 const result = data.result || {};
+
+                // When create_mix returns a task_id, start polling for completion
+                if (toolName === 'create_mix' && result?.result?.task_id) {
+                    this.currentTaskId = result.result.task_id;
+                    this.processing = true;
+                    this.saveLocalState();
+                    this.startPolling(result.result.task_id);
+                }
+
                 const uiMsg = this.buildToolResultUiMessage(toolName, result);
                 if (uiMsg.type === 'progress') {
                     this.updateLastSystemMessage('progress', uiMsg.content || '');
@@ -1298,6 +1307,7 @@ function mixChat() {
                         task_id: uiMsg.task_id || this.currentTaskId,
                     });
                     this.processing = false;
+                    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
                     this.saveLocalState();
                     return;
                 }

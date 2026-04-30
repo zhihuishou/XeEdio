@@ -454,7 +454,7 @@ def delete_asset(
     _current_user: User = Depends(require_role("admin")),
 ):
     """Delete an asset (Admin only). Removes both file and database record."""
-    from app.models.database import TaskAsset
+    from app.models.database import AssetAnalysis, TaskAsset
 
     asset = db.query(Asset).filter(Asset.id == asset_id).first()
     if asset is None:
@@ -466,6 +466,7 @@ def delete_asset(
         shutil.rmtree(asset_dir)
 
     # Remove foreign key references first, then delete the asset
+    db.query(AssetAnalysis).filter(AssetAnalysis.asset_id == asset_id).delete()
     db.query(TaskAsset).filter(TaskAsset.asset_id == asset_id).delete()
     db.delete(asset)
     db.commit()
