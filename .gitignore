@@ -26,16 +26,14 @@ env/
 .DS_Store
 Thumbs.db
 
+# Model weights (too large for git)
+asset/
+
 # Logs
 logs/*.log
 
-# Storage (keep structure, ignore content)
-video-production-platform/storage/assets/*
-!video-production-platform/storage/assets/.gitkeep
-video-production-platform/storage/tasks/*
-!video-production-platform/storage/tasks/.gitkeep
-video-production-platform/storage/chromadb/
-video-production-platform/storage/previews/
+# Storage (all content excluded)
+video-production-platform/storage/
 
 # Go
 ai-video-pipeline/video_platform.db
